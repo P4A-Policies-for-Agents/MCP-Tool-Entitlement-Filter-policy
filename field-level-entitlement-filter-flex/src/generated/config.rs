@@ -1,0 +1,68 @@
+use serde::Deserialize;
+#[derive(Deserialize, Clone, Debug)]
+pub struct Config {
+    #[serde(alias = "allowedPurposes")]
+    pub allowed_purposes: Option<String>,
+    #[serde(
+        alias = "cdgcLoginUrl",
+        deserialize_with = "pdk::serde::deserialize_service"
+    )]
+    pub cdgc_login_url: pdk::hl::Service,
+    #[serde(alias = "cdgcOrgPassword")]
+    pub cdgc_org_password: String,
+    #[serde(alias = "cdgcOrgUsername")]
+    pub cdgc_org_username: String,
+    #[serde(
+        alias = "cdgcSearchUrl",
+        deserialize_with = "pdk::serde::deserialize_service"
+    )]
+    pub cdgc_search_url: pdk::hl::Service,
+    #[serde(alias = "clearanceClaim")]
+    pub clearance_claim: Option<String>,
+    #[serde(alias = "clearanceHeader")]
+    pub clearance_header: Option<String>,
+    #[serde(alias = "clearedLevels")]
+    pub cleared_levels: Option<Vec<String>>,
+    #[serde(alias = "distributed")]
+    pub distributed: Option<bool>,
+    #[serde(alias = "failOpenOnCdgcError")]
+    pub fail_open_on_cdgc_error: Option<bool>,
+    #[serde(alias = "maskMode")]
+    pub mask_mode: Option<String>,
+    #[serde(alias = "maskToken")]
+    pub mask_token: Option<String>,
+    #[serde(alias = "purposeClaim")]
+    pub purpose_claim: Option<String>,
+    #[serde(alias = "purposeHeader")]
+    pub purpose_header: Option<String>,
+    #[serde(alias = "recordsPath")]
+    pub records_path: Option<String>,
+    #[serde(alias = "refreshIntervalSeconds")]
+    pub refresh_interval_seconds: Option<i64>,
+    #[serde(alias = "schemaId")]
+    pub schema_id: String,
+    #[serde(alias = "schemaIdClaim")]
+    pub schema_id_claim: Option<String>,
+    #[serde(alias = "schemaIdHeader")]
+    pub schema_id_header: Option<String>,
+    #[serde(alias = "sensitiveLevels")]
+    pub sensitive_levels: Option<Vec<String>>,
+    #[serde(alias = "sensitiveMarker")]
+    pub sensitive_marker: Option<String>,
+    #[serde(alias = "timeout")]
+    pub timeout: Option<i64>,
+}
+#[pdk::hl::entrypoint_flex]
+fn init(abi: &dyn pdk::flex_abi::api::FlexAbi) -> Result<(), anyhow::Error> {
+    let config: Config = serde_json::from_slice(abi.get_configuration())
+        .map_err(|err| {
+            anyhow::anyhow!(
+                "Failed to parse configuration '{}'. Cause: {}",
+                String::from_utf8_lossy(abi.get_configuration()), err
+            )
+        })?;
+    abi.service_create(config.cdgc_login_url)?;
+    abi.service_create(config.cdgc_search_url)?;
+    abi.setup()?;
+    Ok(())
+}

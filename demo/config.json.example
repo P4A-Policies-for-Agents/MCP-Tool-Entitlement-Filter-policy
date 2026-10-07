@@ -1,0 +1,19 @@
+{
+  "cdgcLoginUrl": "https://dm-us.informaticacloud.com",
+  "cdgcSearchUrl": "https://cdgc-api.dm-us.informaticacloud.com",
+  "cdgcOrgUsername": "REPLACE_ME_SERVICE_ACCOUNT",
+  "cdgcOrgPassword": "REPLACE_ME_SECRET",
+  "schemaId": "REPLACE_ME_SCHEMA_ASSET_ID",
+  "recordsPath": "products",
+  "sensitiveMarker": "confidential",
+  "clearanceHeader": "x-dp-clearance",
+  "purposeHeader": "x-dp-purpose",
+  "clearedLevels": ["restricted"],
+  "allowedPurposes": "fraud-detection",
+  "maskMode": "mask",
+  "maskToken": "***",
+  "refreshIntervalSeconds": 86400,
+  "failOpenOnCdgcError": true,
+  "distributed": false,
+  "timeout": 5000
+}

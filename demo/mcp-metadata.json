@@ -1,0 +1,15 @@
+{
+  "protocolVersion": "2025-03-26",
+  "transport": { "kind": "streamableHttp", "path": "/mcp" },
+  "capabilities": { "tools": { "listChanged": true } },
+  "tools": [
+    {
+      "name": "get_products",
+      "description": "Return product-catalog records. Fields mirror the CDGC-governed dim_product.csv columns, including unit_cost (Business Term marked Confidential). The Field-Level Entitlement Filter masks fields the caller's clearance/purpose don't entitle them to.",
+      "inputSchema": { "type": "object", "properties": {
+        "catalog": { "type": "string", "description": "catalog to query, e.g. products" } } },
+      "outputSchema": { "type": "object", "properties": {
+        "products": { "type": "array" }, "count": { "type": "integer" } } }
+    }
+  ]
+}
