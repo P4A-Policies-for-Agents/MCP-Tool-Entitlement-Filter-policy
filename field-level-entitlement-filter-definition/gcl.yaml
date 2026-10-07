@@ -44,7 +44,10 @@ spec:
     schemaIdHeader:
       type: string
       default: x-dp-schema-id
-      description: Optional request header overriding schemaId per request (multi-product).
+      description: >-
+        Optional request header overriding schemaId per request (multi-product). If the
+        header's schema has no field map (e.g. an unknown id), the policy governs by
+        schemaId instead of passing the response through.
     schemaIdClaim:
       type: string
       description: >-

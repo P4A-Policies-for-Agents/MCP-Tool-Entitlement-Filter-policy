@@ -97,8 +97,7 @@ Expected, for each tool: analyst (`internal`/`analytics`) → `unit_cost` /
 (`restricted`/`fraud-detection`) → visible, `x-entitlement-filtered: 0`. Each tool's
 `_entitlement.assetId` is its own mapped schema. The final spoof call (analyst +
 `x-dp-schema-id: 0000…`) still reports the `dim_product.csv` asset and masks
-`unit_cost`. Without a `get_products` mapping, the header would win, the bogus id
-would resolve to no field map, and the response would pass through unmasked.
+`unit_cost`. On 1.2.0 the same call returns `unit_cost` unmasked.
 
 Quick manual check of both personas + the header:
 

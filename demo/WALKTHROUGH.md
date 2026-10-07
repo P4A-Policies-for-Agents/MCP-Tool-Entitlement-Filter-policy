@@ -129,10 +129,11 @@ The last call in `agent.py` is the analyst calling `get_products` with
 mapping wins. `assetId` is still the `dim_product.csv` id and `unit_cost` is still
 `***`.
 
-Without the mapping, the header would win. The bogus id has no field map, and the
-policy is fail-open on missing maps, so the response would reach the analyst
-unmasked. Mapping every tool closes that gap. Alternatively, `schemaIdClaim` binds
-the schema to a signed token.
+Without the mapping, the header wins. The bogus id has no field map, so 1.3.0
+governs by the default `schemaId` instead, and `unit_cost` is still masked. (1.2.0
+passed such responses through unmasked.) A header naming a *real* schema without
+sensitive fields is still honored for unmapped tools. Map every tool, or use
+`schemaIdClaim` to bind the schema to a signed token.
 
 ## Try the other mask modes
 

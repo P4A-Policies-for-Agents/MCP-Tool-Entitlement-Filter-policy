@@ -70,6 +70,11 @@ schema in this order:
 
 - The tool mapping **outranks the header**, so a caller can't redirect a mapped
   tool to a schema with no sensitive fields.
+- If the schema came from the **header** and has no field map (for example an
+  unknown id), the policy governs by `schemaId` instead. In 1.2.0 that case passed
+  the response through, so a bogus `x-dp-schema-id` unmasked sensitive fields.
+- If a JWT claim and the tool mapping disagree, the **claim wins**. The claim
+  comes from a verified token, so that is treated as intended.
 - A mapped tool's `recordsPath` describes that tool's result shape, so it applies
   even when a JWT claim supplies the schema.
 - Tool names match **exactly** (case-sensitive). Unmapped tools, REST calls,
@@ -189,7 +194,7 @@ field-level-entitlement-filter-flex/          # Rust implementation
   src/entitlement.rs  # PURE: caller entitlement + mask/nullify/drop projection — 11 unit tests
   src/cdgc.rs         # PURE: nonce + cached field-map types
   src/claims.rs       # PURE: decode caller Bearer-JWT claims (opt-in clearance/purpose/schema source) — unit-tested
-  src/routing.rs      # PURE: tool → schema/recordsPath resolution + precedence — 7 unit tests
+  src/routing.rs      # PURE: tool → schema/recordsPath resolution + precedence + header fallback — 8 unit tests
 demo/  # two-tool mock (get_products, get_customers), config (schemaId + toolSchemas + entitlement rule), two-persona agent, PROVISION, WALKTHROUGH
 ```
 
@@ -212,11 +217,12 @@ the signed token so a spoofed `x-dp-schema-id` header can't redirect the policy.
 cd field-level-entitlement-filter-definition && make release
 cd ../field-level-entitlement-filter-flex
 make build-asset-files && cargo build --target wasm32-wasip1 --release
-cargo test --lib            # 22 pure unit tests
+cargo test --lib            # 23 pure unit tests
 make release
 ```
-**1.3.0** (this folder, not yet published) adds the optional `toolSchemas`
-per-tool schema mapping — fully backward compatible with 1.2.0 configs.
+**1.3.0** adds the optional `toolSchemas` per-tool schema mapping, fully backward
+compatible with 1.2.0 configs. A header-supplied schema with no field map now falls
+back to `schemaId` instead of passing the response through.
 Previously published at **1.2.0** (1.1.0 added opt-in JWT-claims sourcing for clearance /
 purpose / schema id — see "Sourcing caller claims from a JWT"; header mode
 remains the default. **1.2.0 turns `sensitiveLevels` and `clearedLevels` into

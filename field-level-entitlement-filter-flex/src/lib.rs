@@ -507,7 +507,16 @@ async fn response_filter<S: DataStorage>(
         _ => return,
     };
 
-    let cc = match get_field_map(&client, &config, &clock, &*map_store, &*lock_store, &ctx.route.asset_id).await {
+    let mut asset_id = ctx.route.asset_id.as_str();
+    let mut found = get_field_map(&client, &config, &clock, &*map_store, &*lock_store, asset_id).await;
+    if found.as_ref().is_none_or(|c| c.fields.is_empty()) {
+        if let Some(fallback) = ctx.route.fallback_asset_id.as_deref() {
+            logger::warn!("fef: no field map for header schema '{asset_id}', governing by '{fallback}'");
+            asset_id = fallback;
+            found = get_field_map(&client, &config, &clock, &*map_store, &*lock_store, asset_id).await;
+        }
+    }
+    let cc = match found {
         Some(c) if !c.fields.is_empty() => c,
         _ => return, // no governed map → pass through (fail-open on our own outage)
     };
@@ -603,7 +612,7 @@ async fn response_filter<S: DataStorage>(
     if !withheld_all.is_empty() {
         logger::info!(
             "fef: withheld {} field(s) asset={} entitled={} [{}]",
-            withheld_all.len(), ctx.route.asset_id, projection.entitled,
+            withheld_all.len(), asset_id, projection.entitled,
             withheld_all.iter().cloned().collect::<Vec<_>>().join(",")
         );
     }
@@ -616,7 +625,7 @@ async fn response_filter<S: DataStorage>(
             "purpose": ctx.purpose,
             "mode": mode_str(projection.mode),
             "withheld": withheld_all.iter().cloned().collect::<Vec<_>>(),
-            "assetId": ctx.route.asset_id,
+            "assetId": asset_id,
             "name": cc.name,
             "externalId": cc.external_id,
             "source": "cdgc",
