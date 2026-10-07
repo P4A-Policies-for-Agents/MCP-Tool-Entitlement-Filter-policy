@@ -53,6 +53,33 @@ spec:
         — so the token binds the caller to a data product and a spoofed header can't
         redirect it. Unset (default) = header/config only. Requires a JWT Validation
         policy upstream to verify the token.
+    toolSchemas:
+      type: array
+      default: []
+      description: >-
+        Optional per-tool schema mapping for MCP APIs exposing tools over different
+        data products. On a tools/call whose params.name matches an entry's tool
+        (exact, case-sensitive), that entry's schemaId (and recordsPath, if set) is
+        used. Precedence: schemaIdClaim > toolSchemas > schemaIdHeader > schemaId.
+        Unmapped tools, REST calls and other MCP methods keep the existing behavior.
+        Empty (default) = single-schema mode, unchanged.
+      items:
+        type: object
+        properties:
+          tool:
+            type: string
+            description: MCP tool name, exactly as sent in tools/call params.name.
+          schemaId:
+            type: string
+            description: CDGC asset id of the schema governing this tool's results.
+          recordsPath:
+            type: string
+            description: >-
+              Optional "/"-separated path to this tool's record(s). Unset = the
+              global recordsPath.
+        required:
+          - tool
+          - schemaId
     recordsPath:
       type: string
       default: ""

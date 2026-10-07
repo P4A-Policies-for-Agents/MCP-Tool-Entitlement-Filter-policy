@@ -42,6 +42,45 @@ table → columns → Business Terms**.
 
 ---
 
+## Mapping MCP tools to schemas (1.3.0)
+
+One MCP server often exposes tools over **different** data products (e.g.
+`get_products` over `dim_product.csv`, `get_customers` over `dim_customer.csv`).
+The optional `toolSchemas` list maps each tool to its own CDGC schema, and
+optionally to its own `recordsPath`:
+
+```json
+"schemaId": "<default-schema-asset-id>",
+"recordsPath": "products",
+"toolSchemas": [
+  { "tool": "get_products",  "schemaId": "<dim_product asset id>" },
+  { "tool": "get_customers", "schemaId": "<dim_customer asset id>", "recordsPath": "customers" }
+]
+```
+
+On a `tools/call`, the policy reads `params.name` and resolves the governing
+schema in this order:
+
+| # | Source | Who controls it |
+|---|---|---|
+| 1 | `schemaIdClaim` (JWT claim) | signed token, verified upstream |
+| 2 | `toolSchemas` entry for the called tool | admin (policy config) |
+| 3 | `schemaIdHeader` (`x-dp-schema-id`) | caller |
+| 4 | `schemaId` | admin (default) |
+
+- The tool mapping **outranks the header**, so a caller can't redirect a mapped
+  tool to a schema with no sensitive fields.
+- A mapped tool's `recordsPath` describes that tool's result shape, so it applies
+  even when a JWT claim supplies the schema.
+- Tool names match **exactly** (case-sensitive). Unmapped tools, REST calls,
+  `resources/read` and `prompts/get` behave exactly as before.
+- Each schema's field map is cached under its own key, so mapped schemas are
+  fetched from CDGC once each and then served from cache.
+- **Backward compatible:** `toolSchemas` defaults to empty, which is the 1.2.0
+  single-schema behavior.
+
+---
+
 ## How it decides — caller entitlement
 
 The caller's identity is read on the request leg from two headers (set by an
@@ -119,7 +158,8 @@ marked Confidential); nothing was configured per field. Run:
 | `schemaId` | string | required | CDGC asset id of the scanned schema whose columns/terms define sensitivity. |
 | `schemaIdHeader` | string | `x-dp-schema-id` | Per-request schema-asset id override. |
 | `schemaIdClaim` | string | _unset_ | Optional JWT claim name to read `schemaId` from; when set + present it wins over `schemaIdHeader`. Needs an upstream JWT Validation policy. |
-| `recordsPath` | string | `""` | `/`-path to the record(s) projected (`products`); array = each element. |
+| `toolSchemas` | array of `{tool, schemaId, recordsPath?}` | `[]` | Optional per-MCP-tool schema (and records path) mapping. See "Mapping MCP tools to schemas". |
+| `recordsPath` | string | `""` | `/`-path to the record(s) projected (`products`); array = each element. Overridden per tool by `toolSchemas[].recordsPath`. |
 | `sensitiveMarker` | string | `confidential` | Case-insensitive substring in a field's term description that marks it sensitive. |
 | `clearanceHeader` | string | `x-dp-clearance` | Request header carrying the caller's clearance level. |
 | `clearanceClaim` | string | _unset_ | Optional JWT claim name for the caller's clearance; when set + present it is used instead of `clearanceHeader`. Needs an upstream JWT Validation policy. |
@@ -145,6 +185,7 @@ field-level-entitlement-filter-flex/          # Rust implementation
   src/entitlement.rs  # PURE: caller entitlement + mask/nullify/drop projection — 11 unit tests
   src/cdgc.rs         # PURE: nonce + cached field-map types
   src/claims.rs       # PURE: decode caller Bearer-JWT claims (opt-in clearance/purpose/schema source) — unit-tested
+  src/routing.rs      # PURE: tool → schema/recordsPath resolution + precedence — 7 unit tests
 demo/  # dim_product-shaped mock, config (schemaId + entitlement rule), two-persona agent, PROVISION, WALKTHROUGH
 ```
 
@@ -167,10 +208,12 @@ the signed token so a spoofed `x-dp-schema-id` header can't redirect the policy.
 cd field-level-entitlement-filter-definition && make release
 cd ../field-level-entitlement-filter-flex
 make build-asset-files && cargo build --target wasm32-wasip1 --release
-cargo test --lib            # 11 pure unit tests
+cargo test --lib            # 22 pure unit tests
 make release
 ```
-Published at **1.2.0** (1.1.0 added opt-in JWT-claims sourcing for clearance /
+**1.3.0** (this folder, not yet published) adds the optional `toolSchemas`
+per-tool schema mapping — fully backward compatible with 1.2.0 configs.
+Previously published at **1.2.0** (1.1.0 added opt-in JWT-claims sourcing for clearance /
 purpose / schema id — see "Sourcing caller claims from a JWT"; header mode
 remains the default. **1.2.0 turns `sensitiveLevels` and `clearedLevels` into
 multi-select dropdowns** — `type: array` of `[public, internal, confidential,

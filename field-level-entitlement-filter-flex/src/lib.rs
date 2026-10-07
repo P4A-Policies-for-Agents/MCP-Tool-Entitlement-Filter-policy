@@ -31,6 +31,7 @@ mod cdgc;
 mod claims;
 mod entitlement;
 mod generated;
+mod routing;
 
 use std::collections::BTreeSet;
 use std::rc::Rc;
@@ -47,6 +48,7 @@ use serde_json::{json, Map, Value};
 use crate::cdgc::{nonce_from_time, CachedFieldMap, RefreshLock};
 use crate::entitlement::{apply, parse_csv_set, parse_level_set, plan, CallerContext, EntitlementPolicy, GovernedField, MaskMode};
 use crate::generated::config::Config;
+use crate::routing::{called_tool, find_mapping, resolve, Route, ToolMapping};
 
 const FIELD_CACHE_NAMESPACE: &str = "fef-fieldmap";
 const REFRESH_LOCK_NAMESPACE: &str = "fef-refresh-lock";
@@ -89,7 +91,7 @@ struct CdgcJwtResponse {
 
 #[derive(Clone)]
 struct Ctx {
-    asset_id: String,
+    route: Route,
     clearance: Option<String>,
     purpose: Option<String>,
 }
@@ -452,9 +454,20 @@ async fn request_filter(request_state: RequestState, config: Rc<Config>) -> Flow
     };
 
     let schema_header = config.schema_id_header.as_deref().unwrap_or("x-dp-schema-id").to_ascii_lowercase();
-    let asset_id = from_claim(&config.schema_id_claim)
-        .or_else(|| hs.handler().header(&schema_header).filter(|v| !v.trim().is_empty()))
-        .unwrap_or_else(|| config.schema_id.clone());
+    let schema_claim = from_claim(&config.schema_id_claim);
+    let schema_from_header = hs.handler().header(&schema_header).filter(|v| !v.trim().is_empty());
+    let mappings: Vec<ToolMapping> = config.tool_schemas.as_deref().unwrap_or_default().iter()
+        .map(|m| ToolMapping { tool: &m.tool, schema_id: &m.schema_id, records_path: m.records_path.as_deref() })
+        .collect();
+    let route_for = |tool: Option<&str>| {
+        resolve(
+            schema_claim.clone(),
+            find_mapping(&mappings, tool),
+            schema_from_header.clone(),
+            &config.schema_id,
+            config.records_path.as_deref().unwrap_or(""),
+        )
+    };
     let clearance_header = config.clearance_header.as_deref().unwrap_or(DEFAULT_CLEARANCE_HEADER).to_ascii_lowercase();
     let purpose_header = config.purpose_header.as_deref().unwrap_or(DEFAULT_PURPOSE_HEADER).to_ascii_lowercase();
     let clearance = from_claim(&config.clearance_claim)
@@ -467,7 +480,8 @@ async fn request_filter(request_state: RequestState, config: Rc<Config>) -> Flow
         if let Ok(v) = serde_json::from_slice::<Value>(&bs.handler().body()) {
             match v.get("method").and_then(Value::as_str) {
                 Some(m) if is_content_method(m) => {
-                    return Flow::Continue(Some(Ctx { asset_id, clearance, purpose }));
+                    let route = route_for(called_tool(&v));
+                    return Flow::Continue(Some(Ctx { route, clearance, purpose }));
                 }
                 Some(_) => return Flow::Continue(None), // non-content JSON-RPC → skip
                 None => {}
@@ -475,7 +489,7 @@ async fn request_filter(request_state: RequestState, config: Rc<Config>) -> Flow
         }
     }
     // REST / non-JSON-RPC → still filter.
-    Flow::Continue(Some(Ctx { asset_id, clearance, purpose }))
+    Flow::Continue(Some(Ctx { route: route_for(None), clearance, purpose }))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -493,7 +507,7 @@ async fn response_filter<S: DataStorage>(
         _ => return,
     };
 
-    let cc = match get_field_map(&client, &config, &clock, &*map_store, &*lock_store, &ctx.asset_id).await {
+    let cc = match get_field_map(&client, &config, &clock, &*map_store, &*lock_store, &ctx.route.asset_id).await {
         Some(c) if !c.fields.is_empty() => c,
         _ => return, // no governed map → pass through (fail-open on our own outage)
     };
@@ -503,7 +517,7 @@ async fn response_filter<S: DataStorage>(
     // The projection is a caller-level decision — computed before touching the body,
     // so the entitlement header can be stamped in the headers phase.
     let projection = plan(&fields, &caller, &policy);
-    let records_path = config.records_path.as_deref().unwrap_or("");
+    let records_path = ctx.route.records_path.as_str();
 
     let hs = response_state.into_headers_state().await;
     let ct = hs.handler().header("content-type").unwrap_or_default();
@@ -589,7 +603,7 @@ async fn response_filter<S: DataStorage>(
     if !withheld_all.is_empty() {
         logger::info!(
             "fef: withheld {} field(s) asset={} entitled={} [{}]",
-            withheld_all.len(), ctx.asset_id, projection.entitled,
+            withheld_all.len(), ctx.route.asset_id, projection.entitled,
             withheld_all.iter().cloned().collect::<Vec<_>>().join(",")
         );
     }
@@ -602,7 +616,7 @@ async fn response_filter<S: DataStorage>(
             "purpose": ctx.purpose,
             "mode": mode_str(projection.mode),
             "withheld": withheld_all.iter().cloned().collect::<Vec<_>>(),
-            "assetId": ctx.asset_id,
+            "assetId": ctx.route.asset_id,
             "name": cc.name,
             "externalId": cc.external_id,
             "source": "cdgc",

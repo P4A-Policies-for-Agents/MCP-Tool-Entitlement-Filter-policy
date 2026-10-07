@@ -1,5 +1,14 @@
 use serde::Deserialize;
 #[derive(Deserialize, Clone, Debug)]
+pub struct ToolSchemas0Config {
+    #[serde(alias = "recordsPath")]
+    pub records_path: Option<String>,
+    #[serde(alias = "schemaId")]
+    pub schema_id: String,
+    #[serde(alias = "tool")]
+    pub tool: String,
+}
+#[derive(Deserialize, Clone, Debug)]
 pub struct Config {
     #[serde(alias = "allowedPurposes")]
     pub allowed_purposes: Option<String>,
@@ -51,6 +60,8 @@ pub struct Config {
     pub sensitive_marker: Option<String>,
     #[serde(alias = "timeout")]
     pub timeout: Option<i64>,
+    #[serde(alias = "toolSchemas")]
+    pub tool_schemas: Option<Vec<ToolSchemas0Config>>,
 }
 #[pdk::hl::entrypoint_flex]
 fn init(abi: &dyn pdk::flex_abi::api::FlexAbi) -> Result<(), anyhow::Error> {
