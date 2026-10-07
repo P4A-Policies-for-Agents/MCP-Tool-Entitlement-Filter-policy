@@ -102,6 +102,38 @@ field list. Change the caller's clearance or purpose and the projection changes;
 a new column Confidential in CDGC and it's protected on the next cache refresh, with
 no policy edit.
 
+## Two tools, two schemas (1.3.0 `toolSchemas`)
+
+The demo MCP server also exposes `get_customers` over `dim_customer.csv`. The policy
+config maps each tool to its own schema:
+
+```json
+"toolSchemas": [
+  { "tool": "get_products",  "schemaId": "<schemaId>" },
+  { "tool": "get_customers", "schemaId": "<customerSchemaId>", "recordsPath": "customers" }
+]
+```
+
+On each `tools/call` the policy reads `params.name`, picks that tool's schema, and
+projects the records at that tool's `recordsPath`. Each schema's sensitivity map is
+fetched from CDGC once and cached under its own key. `agent.py` runs both personas
+against both tools: the analyst gets `unit_cost` and `credit_limit` masked, and the
+fraud investigator sees both. `_entitlement.assetId` shows which schema governed
+each call.
+
+### Why the mapping beats the `x-dp-schema-id` header
+
+The last call in `agent.py` is the analyst calling `get_products` with
+`x-dp-schema-id: 00000000-0000-0000-0000-000000000000`. Precedence is
+`schemaIdClaim` > `toolSchemas` > `schemaIdHeader` > `schemaId`, so the admin's
+mapping wins. `assetId` is still the `dim_product.csv` id and `unit_cost` is still
+`***`.
+
+Without the mapping, the header would win. The bogus id has no field map, and the
+policy is fail-open on missing maps, so the response would reach the analyst
+unmasked. Mapping every tool closes that gap. Alternatively, `schemaIdClaim` binds
+the schema to a signed token.
+
 ## Try the other mask modes
 
 Set `maskMode` to `nullify` (value → `null`) or `drop` (field removed) in

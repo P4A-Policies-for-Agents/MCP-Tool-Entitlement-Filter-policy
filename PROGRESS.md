@@ -51,14 +51,39 @@ governed by its own schema, without breaking existing configs.
 - [x] `cargo test --lib`: 22/22 pass
 - [x] `cargo build --target wasm32-wasip1 --release`: OK; clippy clean
 - [x] README
-- [ ] Not done: end-to-end run against a gateway with two real CDGC schemas
-      (needs a second scanned schema asset id, e.g. a customer table).
-- [ ] Not done: demo update (a second tool in `demo/agent.py` / mock upstream + a
-      `toolSchemas` entry in `demo/config.json`).
+- [x] Demo update (local files):
+  - `demo/agent.py` calls `get_products` and `get_customers` for both personas, prints
+    `_entitlement.assetId` per call, then runs an analyst call on `get_products` with a
+    spoofed `x-dp-schema-id`. MCP `isError` results print as "tool call failed".
+  - `demo/mcp-metadata.json` lists `get_customers` (records under `customers`).
+  - `demo/config.json.example` has a two-entry `toolSchemas`.
+  - Local `demo/config.json` (gitignored) maps only `get_products` to the real
+    `dim_product.csv` id. Add `get_customers` once a customer schema id exists. A
+    placeholder id would resolve to no field map, so that tool's responses would pass
+    through unfiltered.
+  - `PROVISION.md` (second schema, `get_customers` mock scenario, `--policyVersion 1.3.0`),
+    `WALKTHROUGH.md` (two-tool + header-spoof section), README demo note.
+- [ ] Not done: provision `get_customers` on the A2D mock and find a second scanned
+      CDGC schema (e.g. `dim_customer.csv` with a Confidential `credit_limit`).
+- [ ] Not done: end-to-end run of 1.3.0 on a gateway (blocked on publish + the above).
 - [ ] Not done: publish. `make release` in the definition folder, then in the flex
       folder. Note `make build-asset-files` fetches the definition from Exchange, so
       publish the definition before releasing the implementation.
 - [ ] Decide: fail-closed on claim vs tool-mapping mismatch?
+- [ ] Decide: fail-closed when the resolved schema has no field map? (See below.)
+
+## Findings from the live demo run (2026-10-07, deployed policy is still 1.2.0)
+- `get_products`, both personas: works. CDGC now also flags `list_price` as sensitive,
+  so the analyst gets `withheld: [list_price, unit_cost]` (`x-entitlement-filtered: 2`).
+  The README/WALKTHROUGH sample output still shows only `unit_cost`.
+- `get_customers`: the mock returns `isError` "Tool get_customers not found" (not
+  provisioned yet).
+- Header spoof on 1.2.0: analyst + `x-dp-schema-id: 0000…` gets `unit_cost: 42.50`
+  unmasked. The bogus id has no field map, and no map means pass-through. 1.3.0
+  `toolSchemas` closes this for mapped tools only. Unmapped tools and REST calls are
+  still exposed unless `schemaIdClaim` is used or the "no map" case fails closed.
+- `x-entitlement-filtered` is stamped before the body is inspected, so it also appears
+  (e.g. `2`) on MCP error results and non-record payloads where nothing was masked.
 
 ## Commands
 ```bash

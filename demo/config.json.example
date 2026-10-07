@@ -5,6 +5,10 @@
   "cdgcOrgPassword": "REPLACE_ME_SECRET",
   "schemaId": "REPLACE_ME_SCHEMA_ASSET_ID",
   "recordsPath": "products",
+  "toolSchemas": [
+    { "tool": "get_products", "schemaId": "REPLACE_ME_SCHEMA_ASSET_ID" },
+    { "tool": "get_customers", "schemaId": "REPLACE_ME_CUSTOMER_SCHEMA_ASSET_ID", "recordsPath": "customers" }
+  ],
   "sensitiveMarker": "confidential",
   "clearanceHeader": "x-dp-clearance",
   "purposeHeader": "x-dp-purpose",

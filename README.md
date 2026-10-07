@@ -145,6 +145,10 @@ marked Confidential); nothing was configured per field. Run:
 `cp demo/config.json.example demo/config.json` (fill id/creds) → provision per
 [`demo/PROVISION.md`](demo/PROVISION.md) → `./demo/demo.sh`.
 [`demo/WALKTHROUGH.md`](demo/WALKTHROUGH.md) traces both personas field by field.
+The 1.3.0 demo agent also calls a second tool, `get_customers`, governed by its own
+schema through `toolSchemas`, and shows that a spoofed `x-dp-schema-id` can't
+redirect a mapped tool. The output above is from the single-tool 1.2.0 run; the
+two-tool run hasn't been verified against a live gateway yet.
 
 ---
 
@@ -186,7 +190,7 @@ field-level-entitlement-filter-flex/          # Rust implementation
   src/cdgc.rs         # PURE: nonce + cached field-map types
   src/claims.rs       # PURE: decode caller Bearer-JWT claims (opt-in clearance/purpose/schema source) — unit-tested
   src/routing.rs      # PURE: tool → schema/recordsPath resolution + precedence — 7 unit tests
-demo/  # dim_product-shaped mock, config (schemaId + entitlement rule), two-persona agent, PROVISION, WALKTHROUGH
+demo/  # two-tool mock (get_products, get_customers), config (schemaId + toolSchemas + entitlement rule), two-persona agent, PROVISION, WALKTHROUGH
 ```
 
 ### Sourcing caller claims from a JWT

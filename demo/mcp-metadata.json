@@ -10,6 +10,14 @@
         "catalog": { "type": "string", "description": "catalog to query, e.g. products" } } },
       "outputSchema": { "type": "object", "properties": {
         "products": { "type": "array" }, "count": { "type": "integer" } } }
+    },
+    {
+      "name": "get_customers",
+      "description": "Return customer records. Fields mirror the CDGC-governed dim_customer.csv columns, including credit_limit (Business Term marked Confidential). The Field-Level Entitlement Filter masks fields the caller's clearance/purpose don't entitle them to.",
+      "inputSchema": { "type": "object", "properties": {
+        "segment": { "type": "string", "description": "customer segment to query, e.g. retail" } } },
+      "outputSchema": { "type": "object", "properties": {
+        "customers": { "type": "array" }, "count": { "type": "integer" } } }
     }
   ]
 }
