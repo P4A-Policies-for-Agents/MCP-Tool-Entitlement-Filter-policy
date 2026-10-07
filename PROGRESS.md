@@ -20,8 +20,7 @@ governed by its own schema, without breaking existing configs.
   - The mapping outranks the header because the admin sets the mapping and the caller
     sets the header. Otherwise a caller could point a tool at a non-sensitive schema.
   - The claim still wins, to keep the 1.1.0 meaning ("the token binds the caller to a
-    data product"). Open question for the user: should a claim/mapping mismatch
-    fail closed (withhold all sensitive fields) instead? Not implemented.
+    data product"). Confirmed by the user on 2026-10-07: a mismatch is not an error.
 - A mapped tool's `recordsPath` applies whichever source supplied the schema, because
   it describes the tool's result shape.
 - Tool names are matched exactly (case-sensitive). Only `tools/call` uses the mapping;
@@ -48,7 +47,7 @@ governed by its own schema, without breaking existing configs.
 - [x] Definition + generated config
 - [x] Routing module + unit tests
 - [x] Wire into lib.rs
-- [x] `cargo test --lib`: 22/22 pass
+- [x] `cargo test --lib`: 23/23 pass
 - [x] `cargo build --target wasm32-wasip1 --release`: OK; clippy clean
 - [x] README
 - [x] Demo update (local files):
@@ -65,12 +64,26 @@ governed by its own schema, without breaking existing configs.
     `WALKTHROUGH.md` (two-tool + header-spoof section), README demo note.
 - [ ] Not done: provision `get_customers` on the A2D mock and find a second scanned
       CDGC schema (e.g. `dim_customer.csv` with a Confidential `credit_limit`).
-- [ ] Not done: end-to-end run of 1.3.0 on a gateway (blocked on publish + the above).
-- [ ] Not done: publish. `make release` in the definition folder, then in the flex
-      folder. Note `make build-asset-files` fetches the definition from Exchange, so
-      publish the definition before releasing the implementation.
-- [ ] Decide: fail-closed on claim vs tool-mapping mismatch?
-- [ ] Decide: fail-closed when the resolved schema has no field map? (See below.)
+- [x] Header-schema fallback (decided 2026-10-07): when the schema came from
+      `schemaIdHeader` and has no field map, the policy governs by `schemaId` instead
+      of passing through. `Route.fallback_asset_id` in `routing.rs` (set only for
+      header-sourced routes that differ from `schemaId`), used in `response_filter`;
+      `_entitlement.assetId` reports the schema actually used. A real CDGC outage with
+      no cached map still passes through (`failOpenOnCdgcError`). 23/23 tests pass.
+- [x] Decided: claim vs tool-mapping mismatch → the claim wins (unchanged).
+- [x] Published 2026-10-07: definition `field-level-entitlement-filter` 1.3.0, then
+      implementation `field-level-entitlement-filter-flex` 1.3.0 (org
+      `030e0aac-30d9-460f-9234-428c16a123c4`). A later change needs a version bump
+      (1.3.1) in `Cargo.toml` and `exchange.json`.
+- [ ] Not done: upgrade the demo API instance from 1.2.0 to 1.3.0 (remove + re-apply
+      with `demo/config.json`, `--policyVersion 1.3.0`), then re-run `demo/demo.sh`.
+      The spoof call should then report the `dim_product.csv` asset with `unit_cost`
+      masked.
+- [ ] Not done: two-schema end-to-end run (blocked on the `get_customers` mock + a
+      second CDGC schema, above).
+- [ ] Open, minor: each new bogus header id still triggers one CDGC lookup (up to the
+      ~15s budget) before the fallback, so callers can add latency and CDGC load by
+      rotating ids. Same as 1.2.0.
 
 ## Findings from the live demo run (2026-10-07, deployed policy is still 1.2.0)
 - `get_products`, both personas: works. CDGC now also flags `list_price` as sensitive,
@@ -82,6 +95,7 @@ governed by its own schema, without breaking existing configs.
   unmasked. The bogus id has no field map, and no map means pass-through. 1.3.0
   `toolSchemas` closes this for mapped tools only. Unmapped tools and REST calls are
   still exposed unless `schemaIdClaim` is used or the "no map" case fails closed.
+  1.3.0 now falls back to `schemaId` in that case (see Status).
 - `x-entitlement-filtered` is stamped before the body is inspected, so it also appears
   (e.g. `2`) on MCP error results and non-record payloads where nothing was masked.
 
