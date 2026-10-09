@@ -9,7 +9,7 @@ resolver = "2"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [package.metadata.anypoint]
-group_id = "030e0aac-30d9-460f-9234-428c16a123c4"
+group_id = "7e7dd113-5f1b-4a58-be93-21acdc20f1f7"
 definition_asset_id = { name = "field-level-entitlement-filter", version = "1.3.0" }
 implementation_asset_id = "field-level-entitlement-filter-flex"
 
