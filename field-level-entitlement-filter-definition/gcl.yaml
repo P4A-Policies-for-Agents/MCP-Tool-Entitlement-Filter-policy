@@ -3,7 +3,7 @@ apiVersion: gateway.mulesoft.com/v1alpha1
 kind: Extension
 metadata:
   labels:
-    title: Field-Level Entitlement Filter
+    title: MCP Tool Response Field Entitlement Filter
     category: Security
     description: >-
       Derives per-field sensitivity from Informatica CDGC and projects each

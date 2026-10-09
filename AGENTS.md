@@ -1,6 +1,6 @@
 # Agent notes
 
-MuleSoft Omni/Flex Gateway custom policy (PDK, Rust → wasm32-wasip1), extended in
+"MCP Tool Response Field Entitlement Filter": MuleSoft Omni/Flex Gateway custom policy (PDK, Rust → wasm32-wasip1), extended in
 1.3.0 with per-MCP-tool schema mapping (`toolSchemas`).
 
 Read `PROGRESS.md` first: it has the origin of this copy, design decisions, what

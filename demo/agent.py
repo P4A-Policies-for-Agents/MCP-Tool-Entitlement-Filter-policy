@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Agent simulation for the Field-Level Entitlement Filter demo.
+Agent simulation for the MCP Tool Response Field Entitlement Filter demo.
 
 The upstream MCP server exposes TWO tools over two different data products:
 
@@ -96,7 +96,7 @@ def show(label, tool, extra_headers):
 
 
 def main():
-    print(f"🔐  field-level entitlement filter  →  {GW}\n")
+    print(f"🔐  MCP Tool Response Field Entitlement Filter  →  {GW}\n")
     print("Each tool is mapped to its own CDGC schema (toolSchemas). Per-field")
     print("sensitivity is derived live from CDGC. Same tools + same records for every")
     print("caller — only the caller's clearance + purpose (request headers) differ:\n")

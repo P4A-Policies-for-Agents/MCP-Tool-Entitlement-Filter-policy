@@ -1,7 +1,7 @@
 # field-level-entitlement-filter — policy definition
 
 The Exchange **policy definition** (schema) half of the split-model
-[Field-Level Entitlement Filter](../README.md) policy: `gcl.yaml` (config schema,
+[MCP Tool Response Field Entitlement Filter](../README.md) policy: `gcl.yaml` (config schema,
 category `Security`, `assetTypes: mcp,rest,http`), `exchange.json` (GAV), and the
 publish `Makefile`.
 

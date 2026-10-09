@@ -1,7 +1,7 @@
 # field-level-entitlement-filter-flex — policy implementation
 
 The Rust → `wasm32-wasip1` **implementation** half of the split-model
-[Field-Level Entitlement Filter](../README.md) policy.
+[MCP Tool Response Field Entitlement Filter](../README.md) policy.
 
 ```
 src/lib.rs          # CDGC auth (Login→JWT) + ccgf-searchv2 sensitivity derivation,

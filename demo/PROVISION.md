@@ -1,6 +1,6 @@
 # Demo provisioning runbook (catalog-driven, caller-aware)
 
-Stands up the live Field-Level Entitlement Filter demo with `anypoint-cli-v4` + the
+Stands up the live MCP Tool Response Field Entitlement Filter demo with `anypoint-cli-v4` + the
 A2D MCP tools. Per-field sensitivity is derived from CDGC, so you need a real IDMC
 tenant with a **scanned schema asset** whose columns are linked to Business Terms
 (one of which is marked with the `sensitiveMarker`, e.g. "Confidential").
@@ -76,14 +76,14 @@ anypoint-cli-v4 api-mgr:api:deploy <apiInstanceId> --environment Sandbox \
 ```bash
 cp config.json.example config.json   # fill cdgc creds/urls + schemaId + toolSchemas + clearedLevels/allowedPurposes
 anypoint-cli-v4 api-mgr:policy:apply <apiInstanceId> field-level-entitlement-filter \
-  --environment Sandbox --groupId <orgId> --policyVersion 1.3.0 --configFile ./config.json
+  --environment Sandbox --groupId <orgId> --policyVersion 1.3.1 --configFile ./config.json
 anypoint-cli-v4 api-mgr:api:redeploy <apiInstanceId> --environment Sandbox
 ```
 
 `toolSchemas` maps `get_products` → `<schemaId>` and `get_customers` →
 `<customerSchemaId>` with `recordsPath: customers`. It needs policy **1.3.0**; on
 1.2.0 the property is rejected. If 1.2.0 is already applied to the instance, remove
-it and re-apply at 1.3.0.
+it and re-apply at 1.3.1.
 
 ## 4. Run
 

@@ -1,5 +1,5 @@
 // Copyright 2026 Salesforce, Inc. All rights reserved.
-//! Field-Level Entitlement Filter — inbound Omni/Flex Gateway policy.
+//! MCP Tool Response Field Entitlement Filter — inbound Omni/Flex Gateway policy.
 //!
 //! Derives per-field sensitivity for a data product live from Informatica CDGC and,
 //! on the response leg, projects each field for the *caller*: sensitive fields the
