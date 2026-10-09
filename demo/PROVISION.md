@@ -76,14 +76,14 @@ anypoint-cli-v4 api-mgr:api:deploy <apiInstanceId> --environment Sandbox \
 ```bash
 cp config.json.example config.json   # fill cdgc creds/urls + toolSchemas + clearedLevels/allowedPurposes
 anypoint-cli-v4 api-mgr:policy:apply <apiInstanceId> field-level-entitlement-filter \
-  --environment Sandbox --groupId <orgId> --policyVersion 2.0.0 --configFile ./config.json
+  --environment Sandbox --groupId <orgId> --policyVersion 2.1.0 --configFile ./config.json
 anypoint-cli-v4 api-mgr:api:redeploy <apiInstanceId> --environment Sandbox
 ```
 
 `toolSchemas` maps `get_products` → `<productSchemaId>` and `get_customers` →
 `<customerSchemaId>` with `recordsPath: customers`. A tool without an entry passes
 through unfiltered. Policy 2.0.0 has no `schemaId`, so a 1.x config won't validate.
-If 1.x is already applied to the instance, remove it and re-apply at 2.0.0.
+If 1.x is already applied to the instance, remove it and re-apply at 2.1.0.
 
 ## 4. Run
 

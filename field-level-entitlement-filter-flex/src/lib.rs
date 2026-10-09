@@ -48,7 +48,7 @@ use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
 use crate::cdgc::{nonce_from_time, CachedFieldMap, RefreshLock};
-use crate::entitlement::{apply, parse_csv_set, parse_level_set, plan, CallerContext, EntitlementPolicy, GovernedField, MaskMode};
+use crate::entitlement::{apply, classify_terms, parse_csv_set, parse_level_set, plan, CallerContext, EntitlementPolicy, GovernedField, MaskMode};
 use crate::generated::config::Config;
 use crate::routing::{called_tool, resolve, Route, ToolMapping};
 
@@ -233,11 +233,13 @@ async fn fetch_field_map(
             {"terms":{"type":[REL_TECH_GLOSSARY]}},
             {"terms":{"core.sourceIdentity":col_ids}}]}}
     })).await?;
-    let mut col_to_term: Map<String, Value> = Map::new();
+    // A column can carry several terms (e.g. the scanner's Glossary Association adds
+    // one next to a curated term), so keep every link, not just the first.
+    let mut col_to_terms: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
     let mut term_ids: Vec<String> = Vec::new();
     for r in &rels {
         if let (Some(src), Some(tgt)) = (s(r, "core.sourceIdentity"), s(r, "core.targetIdentity")) {
-            col_to_term.entry(src).or_insert(Value::String(tgt.clone()));
+            col_to_terms.entry(src).or_default().push(tgt.clone());
             if !term_ids.contains(&tgt) {
                 term_ids.push(tgt);
             }
@@ -267,22 +269,15 @@ async fn fetch_field_map(
     let mut fields = Vec::new();
     for c in &cols {
         let (Some(id), Some(name)) = (s(c, "core.identity"), s(c, "core.name")) else { continue };
-        let mut sensitive = false;
-        let mut term_name: Option<String> = None;
-        if let Some(Value::String(tid)) = col_to_term.get(&id) {
-            if let Some(term) = terms.get(tid) {
-                term_name = term.get("name").and_then(Value::as_str).map(str::to_string);
-                // Primary: the term's structured Security Level classification.
-                // Fallback (only when no level is set): the description substring marker.
-                let level = term.get("level").and_then(Value::as_str).unwrap_or("").trim().to_lowercase();
-                sensitive = if level.is_empty() {
-                    let desc = term.get("desc").and_then(Value::as_str).unwrap_or("");
-                    desc.to_lowercase().contains(&sens_marker)
-                } else {
-                    sens_levels.contains(&level)
-                };
-            }
-        }
+        let linked = col_to_terms.get(&id).map(Vec::as_slice).unwrap_or(&[]);
+        let str_of = |t: &Value, k: &str| t.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+        let resolved: Vec<(String, String, String)> = linked.iter()
+            .filter_map(|tid| terms.get(tid))
+            .map(|t| (str_of(t, "name"), str_of(t, "level"), str_of(t, "desc")))
+            .collect();
+        let (sensitive, term_name) = classify_terms(
+            resolved.iter().map(|(n, l, d)| (n.as_str(), l.as_str(), d.as_str())),
+            &sens_levels, &sens_marker);
         fields.push(GovernedField { name, sensitive, term: term_name });
     }
     Ok((fields, file_name, external_id))

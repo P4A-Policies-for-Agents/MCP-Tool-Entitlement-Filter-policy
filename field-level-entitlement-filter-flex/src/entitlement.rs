@@ -88,6 +88,36 @@ pub fn parse_level_set(values: Option<&[String]>, default_csv: &str) -> HashSet<
     }
 }
 
+/// Whether one Business Term marks its column sensitive: by its Security Level, or,
+/// only when the term has no level, by `marker` appearing in its description.
+pub fn term_is_sensitive(level: &str, desc: &str, levels: &HashSet<String>, marker: &str) -> bool {
+    let level = level.trim().to_lowercase();
+    if level.is_empty() {
+        desc.to_lowercase().contains(marker)
+    } else {
+        levels.contains(&level)
+    }
+}
+
+/// Classify a column from all its linked terms `(name, level, description)`. The column
+/// is sensitive if any term is; the reported term is the first sensitive one, else the
+/// first one. Taking only the first link would let a level-less term (e.g. one added by
+/// the scanner's Glossary Association) hide a Confidential term on the same column.
+pub fn classify_terms<'a>(
+    terms: impl IntoIterator<Item = (&'a str, &'a str, &'a str)>,
+    levels: &HashSet<String>,
+    marker: &str,
+) -> (bool, Option<String>) {
+    let mut first: Option<&str> = None;
+    for (name, level, desc) in terms {
+        if term_is_sensitive(level, desc, levels, marker) {
+            return (true, Some(name.to_string()));
+        }
+        first.get_or_insert(name);
+    }
+    (false, first.map(str::to_string))
+}
+
 fn norm(v: &Option<String>) -> Option<String> {
     v.as_deref().map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty())
 }
@@ -262,5 +292,24 @@ mod tests {
         assert_eq!(MaskMode::parse("nullify"), MaskMode::Nullify);
         assert_eq!(MaskMode::parse("drop"), MaskMode::Drop);
         assert_eq!(MaskMode::parse("weird"), MaskMode::Mask);
+    }
+
+    #[test]
+    fn classify_any_sensitive_term_wins() {
+        let lv = parse_csv_set("confidential,restricted");
+        let terms = [("Unit Cost", "", "landed cost"), ("WTL Stock Unit Cost", "Confidential", "")];
+        assert_eq!(classify_terms(terms, &lv, "confidential"), (true, Some("WTL Stock Unit Cost".into())));
+    }
+
+    #[test]
+    fn classify_level_beats_description_marker() {
+        let lv = parse_csv_set("confidential,restricted");
+        // A level is set, so the description marker is ignored.
+        let terms = [("SKU", "Internal", "not confidential at all")];
+        assert_eq!(classify_terms(terms, &lv, "confidential"), (false, Some("SKU".into())));
+        // No level: fall back to the marker.
+        let terms = [("Unit Cost", " ", "Confidential: supplier terms")];
+        assert!(classify_terms(terms, &lv, "confidential").0);
+        assert_eq!(classify_terms(std::iter::empty(), &lv, "confidential"), (false, None));
     }
 }
