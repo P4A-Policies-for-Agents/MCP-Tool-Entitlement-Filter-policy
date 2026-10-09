@@ -48,12 +48,6 @@ pub struct Config {
     pub records_path: Option<String>,
     #[serde(alias = "refreshIntervalSeconds")]
     pub refresh_interval_seconds: Option<i64>,
-    #[serde(alias = "schemaId")]
-    pub schema_id: String,
-    #[serde(alias = "schemaIdClaim")]
-    pub schema_id_claim: Option<String>,
-    #[serde(alias = "schemaIdHeader")]
-    pub schema_id_header: Option<String>,
     #[serde(alias = "sensitiveLevels")]
     pub sensitive_levels: Option<Vec<String>>,
     #[serde(alias = "sensitiveMarker")]
@@ -61,7 +55,7 @@ pub struct Config {
     #[serde(alias = "timeout")]
     pub timeout: Option<i64>,
     #[serde(alias = "toolSchemas")]
-    pub tool_schemas: Option<Vec<ToolSchemas0Config>>,
+    pub tool_schemas: Vec<ToolSchemas0Config>,
 }
 #[pdk::hl::entrypoint_flex]
 fn init(abi: &dyn pdk::flex_abi::api::FlexAbi) -> Result<(), anyhow::Error> {

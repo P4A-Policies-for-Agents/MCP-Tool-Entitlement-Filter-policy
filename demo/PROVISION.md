@@ -16,8 +16,8 @@ tenant with a **scanned schema asset** whose columns are linked to Business Term
 | API Manager instance | `<apiInstanceId>` (label `entitlement-filter-demo`) |
 | Flex gateway target | `<gatewayId>` (a gateway with a public URL, e.g. v1.13.5) |
 | Applied policy id | `<policyId>` (`field-level-entitlement-filter`) |
-| Governed schema asset | `<schemaId>` (`dim_product.csv`) |
-| Second schema asset (1.3.0) | `<customerSchemaId>` (`dim_customer.csv`) |
+| Schema asset for `get_products` | `<productSchemaId>` (`dim_product.csv`) |
+| Schema asset for `get_customers` | `<customerSchemaId>` (`dim_customer.csv`) |
 | Governed endpoint | `https://<gatewayPublicHost>/entitlement-filter-demo/mcp` |
 
 ## 0. Find the schema-asset id (CDGC search API)
@@ -28,12 +28,12 @@ curl -s -X POST "https://cdgc-api.<pod>.informaticacloud.com/ccgf-searchv2/api/v
   -H "X-INFA-SEARCH-LANGUAGE: elasticsearch" -H "Content-Type: application/json" \
   -d '{"from":0,"size":25,"query":{"bool":{"must":[{"terms":{"core.classType":["com.infa.odin.models.file.flat.FlatFile"]}}]}}}'
 ```
-`core.identity` → `schemaId`. (Get `<jwt>` via `/identity-service/api/v1/Login`
-then `/jwt/Token` — the same chain the policy uses.)
+`core.identity` of `dim_product.csv` → `<productSchemaId>`. (Get `<jwt>` via
+`/identity-service/api/v1/Login` then `/jwt/Token` — the same chain the policy uses.)
 
-For the two-tool demo (policy 1.3.0, `toolSchemas`), you need a **second** scanned
-schema asset, e.g. `dim_customer.csv`, with `credit_limit` linked to a Confidential
-Business Term. Its `core.identity` → `<customerSchemaId>`.
+`get_customers` needs a **second** scanned schema asset, e.g. `dim_customer.csv`,
+with `credit_limit` linked to a Confidential Business Term. Its `core.identity` →
+`<customerSchemaId>`.
 
 ## 1. A2D mock (returns the SAME full record for everyone)
 
@@ -71,19 +71,19 @@ anypoint-cli-v4 api-mgr:api:deploy <apiInstanceId> --environment Sandbox \
   --target <gatewayId> --gatewayVersion 1.13.5 --overwrite
 ```
 
-## 3. Apply the filter (config = one id + creds + entitlement rule)
+## 3. Apply the filter (config = tool mapping + creds + entitlement rule)
 
 ```bash
-cp config.json.example config.json   # fill cdgc creds/urls + schemaId + toolSchemas + clearedLevels/allowedPurposes
+cp config.json.example config.json   # fill cdgc creds/urls + toolSchemas + clearedLevels/allowedPurposes
 anypoint-cli-v4 api-mgr:policy:apply <apiInstanceId> field-level-entitlement-filter \
-  --environment Sandbox --groupId <orgId> --policyVersion 1.3.1 --configFile ./config.json
+  --environment Sandbox --groupId <orgId> --policyVersion 2.0.0 --configFile ./config.json
 anypoint-cli-v4 api-mgr:api:redeploy <apiInstanceId> --environment Sandbox
 ```
 
-`toolSchemas` maps `get_products` → `<schemaId>` and `get_customers` →
-`<customerSchemaId>` with `recordsPath: customers`. It needs policy **1.3.0**; on
-1.2.0 the property is rejected. If 1.2.0 is already applied to the instance, remove
-it and re-apply at 1.3.1.
+`toolSchemas` maps `get_products` → `<productSchemaId>` and `get_customers` →
+`<customerSchemaId>` with `recordsPath: customers`. A tool without an entry passes
+through unfiltered. Policy 2.0.0 has no `schemaId`, so a 1.x config won't validate.
+If 1.x is already applied to the instance, remove it and re-apply at 2.0.0.
 
 ## 4. Run
 
@@ -95,9 +95,7 @@ cp env.local.sh.example env.local.sh   # set CMP_GW_URL
 Expected, for each tool: analyst (`internal`/`analytics`) → `unit_cost` /
 `credit_limit` masked, `x-entitlement-filtered: 1`; fraud investigator
 (`restricted`/`fraud-detection`) → visible, `x-entitlement-filtered: 0`. Each tool's
-`_entitlement.assetId` is its own mapped schema. The final spoof call (analyst +
-`x-dp-schema-id: 0000…`) still reports the `dim_product.csv` asset and masks
-`unit_cost`. On 1.2.0 the same call returns `unit_cost` unmasked.
+`_entitlement.assetId` is its own mapped schema.
 
 Quick manual check of both personas + the header:
 

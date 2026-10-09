@@ -1,10 +1,12 @@
 // Copyright 2026 Salesforce, Inc. All rights reserved.
 //! MCP Tool Response Field Entitlement Filter — inbound Omni/Flex Gateway policy.
 //!
-//! Derives per-field sensitivity for a data product live from Informatica CDGC and,
-//! on the response leg, projects each field for the *caller*: sensitive fields the
-//! caller's clearance and declared purpose don't entitle them to are withheld —
-//! masked, nulled, or dropped — before the response reaches the agent.
+//! Each MCP tool is mapped (`toolSchemas`) to the CDGC schema of the data product it
+//! returns. For a mapped `tools/call`, the policy derives per-field sensitivity live
+//! from Informatica CDGC and, on the response leg, projects each field for the
+//! *caller*: sensitive fields the caller's clearance and declared purpose don't
+//! entitle them to are withheld — masked, nulled, or dropped — before the response
+//! reaches the agent. Unmapped tools and other MCP methods pass through.
 //!
 //! The sensitivity map (one entry per governed column, flagged sensitive when its
 //! Business Term's structured Security Level is in `sensitiveLevels` — falling back to
@@ -15,8 +17,8 @@
 //!
 //! The caller's clearance and purpose come from request headers by default, or —
 //! when `clearanceClaim`/`purposeClaim` are configured — from claims in the caller's
-//! Bearer JWT (decoded here, verified by an upstream JWT Validation policy). The
-//! schema id can likewise come from `schemaIdClaim`. See `claims`.
+//! Bearer JWT (decoded here, verified by an upstream JWT Validation policy). See
+//! `claims`.
 //!
 //! The caller-entitlement decision is **fail-closed**: absent or insufficient claims
 //! withhold every sensitive field. The policy is fail-open only on its own CDGC
@@ -48,7 +50,7 @@ use serde_json::{json, Map, Value};
 use crate::cdgc::{nonce_from_time, CachedFieldMap, RefreshLock};
 use crate::entitlement::{apply, parse_csv_set, parse_level_set, plan, CallerContext, EntitlementPolicy, GovernedField, MaskMode};
 use crate::generated::config::Config;
-use crate::routing::{called_tool, find_mapping, resolve, Route, ToolMapping};
+use crate::routing::{called_tool, resolve, Route, ToolMapping};
 
 const FIELD_CACHE_NAMESPACE: &str = "fef-fieldmap";
 const REFRESH_LOCK_NAMESPACE: &str = "fef-refresh-lock";
@@ -94,14 +96,6 @@ struct Ctx {
     route: Route,
     clearance: Option<String>,
     purpose: Option<String>,
-}
-
-fn is_content_method(method: &str) -> bool {
-    matches!(
-        method,
-        "tools/call" | "resources/read" | "prompts/get"
-            | "message/send" | "message/stream" | "SendMessage" | "SendStreamingMessage"
-    )
 }
 
 fn now_secs(clock: &Clock) -> i64 {
@@ -417,12 +411,10 @@ fn nav_mut<'a>(root: &'a mut Value, path: &str) -> Option<&'a mut Value> {
     }
     Some(cur)
 }
-/// Where the business payload lives in the response, so we can write it back.
-/// MCP/A2A wrap it in a JSON-RPC envelope; a REST API returns it directly.
+/// Where the business payload lives in the MCP tool result, so we can write it back.
 enum Place {
-    Structured,     // result.structuredContent (MCP)
-    Content(usize), // result.content[i].text as embedded JSON (MCP)
-    Rest,           // the response body *is* the payload (REST/HTTP API)
+    Structured,     // result.structuredContent
+    Content(usize), // result.content[i].text as embedded JSON
 }
 
 /// True if `path` in the payload points at a record (object) or an array of them.
@@ -441,10 +433,7 @@ async fn request_filter(request_state: RequestState, config: Rc<Config>) -> Flow
     // caller's Bearer token. The token is only decoded here — an upstream JWT
     // Validation policy must verify it. A configured claim wins over the header;
     // absent config or absent claim falls back to the header (backward compatible).
-    let jwt_claims = if config.schema_id_claim.is_some()
-        || config.clearance_claim.is_some()
-        || config.purpose_claim.is_some()
-    {
+    let jwt_claims = if config.clearance_claim.is_some() || config.purpose_claim.is_some() {
         claims::decode_bearer_claims(hs.handler().header("authorization").as_deref())
     } else {
         None
@@ -453,21 +442,6 @@ async fn request_filter(request_state: RequestState, config: Rc<Config>) -> Flow
         claims::claim_str(jwt_claims.as_ref()?, name.as_deref()?)
     };
 
-    let schema_header = config.schema_id_header.as_deref().unwrap_or("x-dp-schema-id").to_ascii_lowercase();
-    let schema_claim = from_claim(&config.schema_id_claim);
-    let schema_from_header = hs.handler().header(&schema_header).filter(|v| !v.trim().is_empty());
-    let mappings: Vec<ToolMapping> = config.tool_schemas.as_deref().unwrap_or_default().iter()
-        .map(|m| ToolMapping { tool: &m.tool, schema_id: &m.schema_id, records_path: m.records_path.as_deref() })
-        .collect();
-    let route_for = |tool: Option<&str>| {
-        resolve(
-            schema_claim.clone(),
-            find_mapping(&mappings, tool),
-            schema_from_header.clone(),
-            &config.schema_id,
-            config.records_path.as_deref().unwrap_or(""),
-        )
-    };
     let clearance_header = config.clearance_header.as_deref().unwrap_or(DEFAULT_CLEARANCE_HEADER).to_ascii_lowercase();
     let purpose_header = config.purpose_header.as_deref().unwrap_or(DEFAULT_PURPOSE_HEADER).to_ascii_lowercase();
     let clearance = from_claim(&config.clearance_claim)
@@ -475,21 +449,26 @@ async fn request_filter(request_state: RequestState, config: Rc<Config>) -> Flow
     let purpose = from_claim(&config.purpose_claim)
         .or_else(|| hs.handler().header(&purpose_header).filter(|v| !v.trim().is_empty()));
     let ct = hs.handler().header("content-type").unwrap_or_default();
-    if ct.starts_with("application/json") && hs.method().as_str() == "POST" {
-        let bs = hs.into_body_state().await;
-        if let Ok(v) = serde_json::from_slice::<Value>(&bs.handler().body()) {
-            match v.get("method").and_then(Value::as_str) {
-                Some(m) if is_content_method(m) => {
-                    let route = route_for(called_tool(&v));
-                    return Flow::Continue(Some(Ctx { route, clearance, purpose }));
-                }
-                Some(_) => return Flow::Continue(None), // non-content JSON-RPC → skip
-                None => {}
+    if !(ct.starts_with("application/json") && hs.method().as_str() == "POST") {
+        return Flow::Continue(None);
+    }
+    let bs = hs.into_body_state().await;
+    let Ok(rpc) = serde_json::from_slice::<Value>(&bs.handler().body()) else {
+        return Flow::Continue(None);
+    };
+    let mappings: Vec<ToolMapping> = config.tool_schemas.iter()
+        .map(|m| ToolMapping { tool: &m.tool, schema_id: &m.schema_id, records_path: m.records_path.as_deref() })
+        .collect();
+    let tool = called_tool(&rpc);
+    match resolve(&mappings, tool, config.records_path.as_deref().unwrap_or("")) {
+        Some(route) => Flow::Continue(Some(Ctx { route, clearance, purpose })),
+        None => {
+            if let Some(t) = tool {
+                logger::debug!("fef: tool '{t}' has no toolSchemas entry; response not filtered");
             }
+            Flow::Continue(None)
         }
     }
-    // REST / non-JSON-RPC → still filter.
-    Flow::Continue(Some(Ctx { route: route_for(None), clearance, purpose }))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -507,16 +486,8 @@ async fn response_filter<S: DataStorage>(
         _ => return,
     };
 
-    let mut asset_id = ctx.route.asset_id.as_str();
-    let mut found = get_field_map(&client, &config, &clock, &*map_store, &*lock_store, asset_id).await;
-    if found.as_ref().is_none_or(|c| c.fields.is_empty()) {
-        if let Some(fallback) = ctx.route.fallback_asset_id.as_deref() {
-            logger::warn!("fef: no field map for header schema '{asset_id}', governing by '{fallback}'");
-            asset_id = fallback;
-            found = get_field_map(&client, &config, &clock, &*map_store, &*lock_store, asset_id).await;
-        }
-    }
-    let cc = match found {
+    let asset_id = ctx.route.asset_id.as_str();
+    let cc = match get_field_map(&client, &config, &clock, &*map_store, &*lock_store, asset_id).await {
         Some(c) if !c.fields.is_empty() => c,
         _ => return, // no governed map → pass through (fail-open on our own outage)
     };
@@ -547,43 +518,32 @@ async fn response_filter<S: DataStorage>(
         Some(v) => v,
         None => return,
     };
-    // MCP/A2A wrap the payload in a JSON-RPC envelope; a REST API returns the JSON
-    // payload directly. Detect which, extract the payload, and remember where to
-    // write it back.
-    let is_rpc = is_sse
-        || rpc.get("jsonrpc").is_some()
-        || (rpc.get("result").is_some() && rpc.get("id").is_some());
-    let (mut payload, place) = if is_rpc {
-        // Only govern successful tool results.
-        let result = match rpc.get("result") {
-            Some(r) => r,
-            None => return,
-        };
-        // structuredContent, else the first JSON content[].text.
-        if let Some(sc) = result.get("structuredContent") {
-            (sc.clone(), Place::Structured)
-        } else if let Some(arr) = result.get("content").and_then(Value::as_array) {
-            let mut found = None;
-            for (i, item) in arr.iter().enumerate() {
-                if item.get("type").and_then(Value::as_str) == Some("text") {
-                    if let Some(t) = item.get("text").and_then(Value::as_str) {
-                        if let Ok(v) = serde_json::from_str::<Value>(t) {
-                            found = Some((v, i));
-                            break;
-                        }
+    // Only govern successful tool results: structuredContent, else the first JSON
+    // content[].text. Remember where the payload was to write it back.
+    let result = match rpc.get("result") {
+        Some(r) => r,
+        None => return,
+    };
+    let (mut payload, place) = if let Some(sc) = result.get("structuredContent") {
+        (sc.clone(), Place::Structured)
+    } else if let Some(arr) = result.get("content").and_then(Value::as_array) {
+        let mut found = None;
+        for (i, item) in arr.iter().enumerate() {
+            if item.get("type").and_then(Value::as_str) == Some("text") {
+                if let Some(t) = item.get("text").and_then(Value::as_str) {
+                    if let Ok(v) = serde_json::from_str::<Value>(t) {
+                        found = Some((v, i));
+                        break;
                     }
                 }
             }
-            match found {
-                Some((v, i)) => (v, Place::Content(i)),
-                None => return,
-            }
-        } else {
-            return;
+        }
+        match found {
+            Some((v, i)) => (v, Place::Content(i)),
+            None => return,
         }
     } else {
-        // REST / HTTP API: the whole response body is the payload.
-        (rpc.clone(), Place::Rest)
+        return;
     };
 
     if !has_records(&payload, records_path) {
@@ -651,10 +611,6 @@ async fn response_filter<S: DataStorage>(
             if let Some(item) = rpc.pointer_mut(&format!("/result/content/{i}/text")) {
                 *item = Value::String(payload.to_string());
             }
-        }
-        Place::Rest => {
-            // REST: the response body is the payload itself (no envelope to reframe).
-            rpc = payload.clone();
         }
     }
 

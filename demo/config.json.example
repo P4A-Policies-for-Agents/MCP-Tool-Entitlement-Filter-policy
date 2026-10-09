@@ -3,10 +3,9 @@
   "cdgcSearchUrl": "https://cdgc-api.dm-us.informaticacloud.com",
   "cdgcOrgUsername": "REPLACE_ME_SERVICE_ACCOUNT",
   "cdgcOrgPassword": "REPLACE_ME_SECRET",
-  "schemaId": "REPLACE_ME_SCHEMA_ASSET_ID",
   "recordsPath": "products",
   "toolSchemas": [
-    { "tool": "get_products", "schemaId": "REPLACE_ME_SCHEMA_ASSET_ID" },
+    { "tool": "get_products", "schemaId": "REPLACE_ME_PRODUCT_SCHEMA_ASSET_ID" },
     { "tool": "get_customers", "schemaId": "REPLACE_ME_CUSTOMER_SCHEMA_ASSET_ID", "recordsPath": "customers" }
   ],
   "sensitiveMarker": "confidential",

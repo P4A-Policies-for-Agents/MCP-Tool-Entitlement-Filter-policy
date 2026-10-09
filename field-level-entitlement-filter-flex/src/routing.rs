@@ -1,23 +1,9 @@
 // Copyright 2026 Salesforce, Inc. All rights reserved.
-//! Resolve which CDGC schema (and records path) governs a request.
+//! Resolve which CDGC schema (and records path) governs an MCP tool call.
 //!
-//! An MCP API can expose several tools, each returning a different data product.
-//! `toolSchemas` maps a tool name to its schema; this module picks the effective
-//! schema for one request from the available sources, in precedence order:
-//!
-//! 1. `schemaIdClaim` — signed token binding (upstream-validated JWT)
-//! 2. `toolSchemas` entry for the called tool — admin-configured
-//! 3. `schemaIdHeader` — caller-supplied
-//! 4. `schemaId` — the configured default
-//!
-//! The tool mapping outranks the header so a caller can't redirect a mapped tool
-//! to a schema with no sensitive fields. The records path is a property of the
-//! tool's result shape, so a mapped tool's `recordsPath` applies whichever source
-//! supplied the schema. With no mapping, behavior is identical to single-schema mode.
-//!
-//! A caller-supplied header schema that has no field map (unknown id, or never
-//! fetched) would otherwise mean pass-through, so a bogus header could unmask a
-//! response. Such a route carries the default schema as `fallback_asset_id`.
+//! `toolSchemas` is the only schema source: each MCP tool maps to the schema of the
+//! data product it returns. A `tools/call` whose tool has no entry, and any other
+//! JSON-RPC method, resolves to no route and its response passes through unfiltered.
 
 use serde_json::Value;
 
@@ -32,9 +18,6 @@ pub struct ToolMapping<'a> {
 pub struct Route {
     pub asset_id: String,
     pub records_path: String,
-    /// Schema to govern by when `asset_id` has no field map. Set only when
-    /// `asset_id` came from the caller's header.
-    pub fallback_asset_id: Option<String>,
 }
 
 /// The tool name of an MCP `tools/call` JSON-RPC request; `None` for any other method.
@@ -45,31 +28,19 @@ pub fn called_tool(rpc: &Value) -> Option<&str> {
     rpc.get("params")?.get("name")?.as_str().map(str::trim).filter(|s| !s.is_empty())
 }
 
-/// The first mapping whose `tool` equals `tool` exactly.
-pub fn find_mapping<'a>(mappings: &'a [ToolMapping<'a>], tool: Option<&str>) -> Option<&'a ToolMapping<'a>> {
+/// The route for `tool`: the first mapping whose `tool` equals it exactly and whose
+/// `schemaId` is non-blank. The mapping's `recordsPath` overrides the global one.
+pub fn resolve(mappings: &[ToolMapping], tool: Option<&str>, default_records_path: &str) -> Option<Route> {
     let tool = tool?;
-    mappings.iter().find(|m| m.tool == tool)
-}
-
-pub fn resolve(
-    claim: Option<String>,
-    mapping: Option<&ToolMapping>,
-    header: Option<String>,
-    default_schema: &str,
-    default_records_path: &str,
-) -> Route {
-    let non_empty = |s: &str| (!s.trim().is_empty()).then(|| s.to_string());
-    let trusted = claim.or_else(|| mapping.and_then(|m| non_empty(m.schema_id)));
-    let (asset_id, fallback_asset_id) = match (trusted, header) {
-        (Some(id), _) => (id, None),
-        (None, Some(h)) if h != default_schema => (h, Some(default_schema.to_string())),
-        (None, _) => (default_schema.to_string(), None),
-    };
-    let records_path = mapping
-        .and_then(|m| m.records_path)
-        .unwrap_or(default_records_path)
-        .to_string();
-    Route { asset_id, records_path, fallback_asset_id }
+    let m = mappings.iter().find(|m| m.tool == tool)?;
+    let asset_id = m.schema_id.trim();
+    if asset_id.is_empty() {
+        return None;
+    }
+    Some(Route {
+        asset_id: asset_id.to_string(),
+        records_path: m.records_path.unwrap_or(default_records_path).to_string(),
+    })
 }
 
 #[cfg(test)]
@@ -96,65 +67,29 @@ mod tests {
     }
 
     #[test]
-    fn mapping_is_exact_match() {
-        let m = maps();
-        assert_eq!(find_mapping(&m, Some("get_customer")).map(|x| x.schema_id), Some("S-CUSTOMER"));
-        assert!(find_mapping(&m, Some("Get_Customer")).is_none());
-        assert!(find_mapping(&m, Some("unknown")).is_none());
-        assert!(find_mapping(&m, None).is_none());
-        assert!(find_mapping(&[], Some("get_product")).is_none());
-    }
-
-    #[test]
-    fn no_mapping_preserves_single_schema_behavior() {
-        let r = resolve(None, None, None, "S-DEFAULT", "");
-        assert_eq!(r, Route { asset_id: "S-DEFAULT".into(), records_path: "".into(), fallback_asset_id: None });
-        let r = resolve(None, None, Some("S-HDR".into()), "S-DEFAULT", "rows");
-        assert_eq!(r.asset_id, "S-HDR");
-        assert_eq!(r.records_path, "rows");
-        let r = resolve(Some("S-CLAIM".into()), None, Some("S-HDR".into()), "S-DEFAULT", "");
-        assert_eq!(r.asset_id, "S-CLAIM");
-    }
-
-    #[test]
-    fn mapping_beats_header_and_default() {
-        let m = maps();
-        let r = resolve(None, find_mapping(&m, Some("get_product")), Some("S-HDR".into()), "S-DEFAULT", "rows");
-        assert_eq!(r, Route { asset_id: "S-PRODUCT".into(), records_path: "products".into(), fallback_asset_id: None });
-    }
-
-    #[test]
-    fn claim_beats_mapping_but_tool_records_path_applies() {
-        let m = maps();
-        let r = resolve(Some("S-CLAIM".into()), find_mapping(&m, Some("get_product")), None, "S-DEFAULT", "rows");
-        assert_eq!(r, Route { asset_id: "S-CLAIM".into(), records_path: "products".into(), fallback_asset_id: None });
+    fn mapped_tool_gets_its_schema_and_records_path() {
+        let r = resolve(&maps(), Some("get_product"), "rows");
+        assert_eq!(r, Some(Route { asset_id: "S-PRODUCT".into(), records_path: "products".into() }));
     }
 
     #[test]
     fn mapping_without_records_path_uses_global() {
-        let m = maps();
-        let r = resolve(None, find_mapping(&m, Some("get_customer")), None, "S-DEFAULT", "rows");
-        assert_eq!(r, Route { asset_id: "S-CUSTOMER".into(), records_path: "rows".into(), fallback_asset_id: None });
+        let r = resolve(&maps(), Some("get_customer"), "rows");
+        assert_eq!(r, Some(Route { asset_id: "S-CUSTOMER".into(), records_path: "rows".into() }));
     }
 
     #[test]
-    fn only_header_sourced_schema_falls_back_to_default() {
-        let r = resolve(None, None, Some("S-HDR".into()), "S-DEFAULT", "");
-        assert_eq!(r.fallback_asset_id.as_deref(), Some("S-DEFAULT"));
-        let r = resolve(None, None, Some("S-DEFAULT".into()), "S-DEFAULT", "");
-        assert_eq!(r.fallback_asset_id, None);
-        let r = resolve(Some("S-CLAIM".into()), None, Some("S-HDR".into()), "S-DEFAULT", "");
-        assert_eq!(r.fallback_asset_id, None);
+    fn unmapped_or_missing_tool_has_no_route() {
         let m = maps();
-        let r = resolve(None, find_mapping(&m, Some("get_product")), Some("S-HDR".into()), "S-DEFAULT", "");
-        assert_eq!(r.fallback_asset_id, None);
+        assert_eq!(resolve(&m, Some("Get_Product"), ""), None);
+        assert_eq!(resolve(&m, Some("unknown"), ""), None);
+        assert_eq!(resolve(&m, None, ""), None);
+        assert_eq!(resolve(&[], Some("get_product"), ""), None);
     }
 
     #[test]
-    fn blank_mapping_schema_falls_through() {
+    fn blank_schema_id_has_no_route() {
         let blank = [ToolMapping { tool: "t", schema_id: " ", records_path: None }];
-        let r = resolve(None, find_mapping(&blank, Some("t")), Some("S-HDR".into()), "S-DEFAULT", "");
-        assert_eq!(r.asset_id, "S-HDR");
-        assert_eq!(r.fallback_asset_id.as_deref(), Some("S-DEFAULT"));
+        assert_eq!(resolve(&blank, Some("t"), ""), None);
     }
 }

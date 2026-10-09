@@ -6,12 +6,13 @@ metadata:
     title: MCP Tool Response Field Entitlement Filter
     category: Security
     description: >-
-      Derives per-field sensitivity from Informatica CDGC and projects each
-      response field for the caller — masking, nulling, or dropping sensitive
-      fields the caller's clearance and declared purpose don't entitle them to.
+      Maps each MCP tool to a CDGC schema, derives per-field sensitivity from
+      Informatica CDGC, and projects each tool-response field for the caller —
+      masking, nulling, or dropping sensitive fields the caller's clearance and
+      declared purpose don't entitle them to.
     metadata/capabilities/injectionPoint: inbound
-    metadata/capabilities/assetTypes: mcp,rest,http
-    metadata/interfaceScope: api,resource
+    metadata/capabilities/assetTypes: mcp
+    metadata/interfaceScope: api
 spec:
   extends:
     - name: extension-definition
@@ -35,37 +36,15 @@ spec:
       type: string
       description: IDMC service-account password.
       "@context": { "@characteristics": [security:sensitive] }
-    schemaId:
-      type: string
-      description: >-
-        CDGC asset id of the scanned schema — a flat file, table, etc. — whose
-        governed columns and linked Business Terms define per-field sensitivity.
-        No per-field configuration.
-    schemaIdHeader:
-      type: string
-      default: x-dp-schema-id
-      description: >-
-        Optional request header overriding schemaId per request (multi-product). If the
-        header's schema has no field map (e.g. an unknown id), the policy governs by
-        schemaId instead of passing the response through.
-    schemaIdClaim:
-      type: string
-      description: >-
-        Optional JWT claim name to read schemaId from. When set and present in the
-        caller's (upstream-validated) Bearer token, the claim wins over schemaIdHeader
-        — so the token binds the caller to a data product and a spoofed header can't
-        redirect it. Unset (default) = header/config only. Requires a JWT Validation
-        policy upstream to verify the token.
     toolSchemas:
       type: array
-      default: []
       description: >-
-        Optional per-tool schema mapping for MCP APIs exposing tools over different
-        data products. On a tools/call whose params.name matches an entry's tool
-        (exact, case-sensitive), that entry's schemaId (and recordsPath, if set) is
-        used. Precedence: schemaIdClaim > toolSchemas > schemaIdHeader > schemaId.
-        Unmapped tools, REST calls and other MCP methods keep the existing behavior.
-        Empty (default) = single-schema mode, unchanged.
+        Maps each MCP tool to the CDGC schema governing its results. On a tools/call
+        whose params.name matches an entry's tool (exact, case-sensitive), that
+        entry's schema defines per-field sensitivity and its recordsPath (or the
+        global recordsPath) locates the records. Responses of unmapped tools and of
+        other MCP methods pass through unfiltered, so map every tool that returns
+        governed data.
       items:
         type: object
         properties:
@@ -74,7 +53,10 @@ spec:
             description: MCP tool name, exactly as sent in tools/call params.name.
           schemaId:
             type: string
-            description: CDGC asset id of the schema governing this tool's results.
+            description: >-
+              CDGC asset id of the scanned schema (flat file, table, etc.) whose
+              governed columns and linked Business Terms define this tool's
+              per-field sensitivity.
           recordsPath:
             type: string
             description: >-
@@ -87,8 +69,9 @@ spec:
       type: string
       default: ""
       description: >-
-        "/"-separated path into the tool-result payload to the record(s) whose
-        fields are projected, e.g. "products". Empty = payload root; array = each element.
+        Default "/"-separated path into the tool-result payload to the record(s)
+        whose fields are projected, e.g. "products", for toolSchemas entries without
+        their own recordsPath. Empty = payload root; array = each element.
     sensitiveLevels:
       type: array
       items:
@@ -185,4 +168,4 @@ spec:
     - cdgcSearchUrl
     - cdgcOrgUsername
     - cdgcOrgPassword
-    - schemaId
+    - toolSchemas

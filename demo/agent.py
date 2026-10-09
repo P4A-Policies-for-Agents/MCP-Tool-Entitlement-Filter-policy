@@ -15,9 +15,6 @@ each field against the caller's clearance + declared purpose (request headers).
   * analyst  (clearance=internal,   purpose=analytics)       → sensitive fields MASKED (***)
   * fraud    (clearance=restricted, purpose=fraud-detection) → sensitive fields VISIBLE
 
-Finally the analyst tries to redirect get_products to another schema with the
-`x-dp-schema-id` header. The tool mapping outranks the header, so unit_cost stays masked.
-
 Usage:
     CMP_GW_URL="https://<host>/entitlement-filter-demo/mcp" python3 agent.py
 """
@@ -40,9 +37,6 @@ TOOLS = {
     "get_products": ({"catalog": "products"}, "products", "unit_cost"),
     "get_customers": ({"segment": "retail"}, "customers", "credit_limit"),
 }
-
-SPOOFED_SCHEMA_ID = "00000000-0000-0000-0000-000000000000"
-
 
 def call(tool, arguments, extra_headers):
     body = {"jsonrpc": "2.0", "id": 9, "method": "tools/call",
@@ -103,12 +97,6 @@ def main():
     for tool in TOOLS:
         for label, headers in PERSONAS.items():
             show(label, tool, headers)
-
-    print("Header spoof: the analyst points get_products at another schema with x-dp-schema-id.")
-    print("The admin's tool mapping outranks the caller's header, so nothing changes:\n")
-    analyst = next(iter(PERSONAS.items()))
-    show(f"{analyst[0]} + x-dp-schema-id spoof", "get_products",
-         {**analyst[1], "x-dp-schema-id": SPOOFED_SCHEMA_ID})
 
     print("The cleared fraud investigator sees the Confidential fields; the analyst gets")
     print("them masked, on both tools. Nothing was configured per field — sensitivity came")

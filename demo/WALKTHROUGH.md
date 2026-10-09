@@ -3,12 +3,14 @@
 This traces the two demo callers end to end: the raw upstream record, the
 sensitivity map the policy derived from CDGC, and exactly why one caller sees
 `unit_cost` and the other gets it masked. Nothing here is configured per field —
-the only catalog input is the one `schemaId`.
+the only catalog input is the `toolSchemas` entry mapping `get_products` to one
+`schemaId`.
 
 ## The sensitivity map (derived live from CDGC — not configured)
 
-On the first call the policy resolves `schemaId = <schemaId>` (the CDGC asset id of `dim_product.csv`)
-in CDGC, enumerates the scanned asset's columns, follows each column → Business Term
+On the first `get_products` call the policy looks up that tool's `toolSchemas`
+entry (`schemaId = <productSchemaId>`, the CDGC asset id of `dim_product.csv`),
+resolves it in CDGC, enumerates the scanned asset's columns, follows each column → Business Term
 link, and builds this map for `dim_product.csv` (then caches it, TTL
 `refreshIntervalSeconds = 86400`):
 
@@ -61,7 +63,7 @@ Headers: `x-dp-clearance: internal`, `x-dp-purpose: analytics`.
 
 ```json
 { "_entitlement": { "entitled": false, "clearance":"internal", "purpose":"analytics",
-    "mode":"mask", "withheld":["unit_cost"], "assetId":"<schemaId>",
+    "mode":"mask", "withheld":["unit_cost"], "assetId":"<productSchemaId>",
     "name":"dim_product.csv", "externalId":"<externalId>", "source":"cdgc" },
   "count": 1,
   "products": [ { "brand":"Acme","category":"Kitchen","department":"Home",
@@ -85,7 +87,7 @@ Headers: `x-dp-clearance: restricted`, `x-dp-purpose: fraud-detection`.
 
 ```json
 { "_entitlement": { "entitled": true, "clearance":"restricted", "purpose":"fraud-detection",
-    "mode":"mask", "withheld":[], "assetId":"<schemaId>",
+    "mode":"mask", "withheld":[], "assetId":"<productSchemaId>",
     "name":"dim_product.csv", "externalId":"<externalId>", "source":"cdgc" },
   "count": 1,
   "products": [ { "…":"…", "unit_cost":"42.50" } ] }
@@ -102,14 +104,14 @@ field list. Change the caller's clearance or purpose and the projection changes;
 a new column Confidential in CDGC and it's protected on the next cache refresh, with
 no policy edit.
 
-## Two tools, two schemas (1.3.0 `toolSchemas`)
+## Two tools, two schemas (`toolSchemas`)
 
 The demo MCP server also exposes `get_customers` over `dim_customer.csv`. The policy
 config maps each tool to its own schema:
 
 ```json
 "toolSchemas": [
-  { "tool": "get_products",  "schemaId": "<schemaId>" },
+  { "tool": "get_products",  "schemaId": "<productSchemaId>" },
   { "tool": "get_customers", "schemaId": "<customerSchemaId>", "recordsPath": "customers" }
 ]
 ```
@@ -121,19 +123,10 @@ against both tools: the analyst gets `unit_cost` and `credit_limit` masked, and 
 fraud investigator sees both. `_entitlement.assetId` shows which schema governed
 each call.
 
-### Why the mapping beats the `x-dp-schema-id` header
-
-The last call in `agent.py` is the analyst calling `get_products` with
-`x-dp-schema-id: 00000000-0000-0000-0000-000000000000`. Precedence is
-`schemaIdClaim` > `toolSchemas` > `schemaIdHeader` > `schemaId`, so the admin's
-mapping wins. `assetId` is still the `dim_product.csv` id and `unit_cost` is still
-`***`.
-
-Without the mapping, the header wins. The bogus id has no field map, so 1.3.0
-governs by the default `schemaId` instead, and `unit_cost` is still masked. (1.2.0
-passed such responses through unmasked.) A header naming a *real* schema without
-sensitive fields is still honored for unmapped tools. Map every tool, or use
-`schemaIdClaim` to bind the schema to a signed token.
+The mapping is the only way a schema is chosen: callers can't redirect a tool to
+another schema with a header or token claim. A tool with no `toolSchemas` entry
+gets no `_entitlement` annotation, and its response passes through unfiltered, so
+map every tool that returns governed data.
 
 ## Try the other mask modes
 
