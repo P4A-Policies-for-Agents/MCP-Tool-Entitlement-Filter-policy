@@ -21,13 +21,13 @@ results. REST/HTTP APIs were dropped in 2.0.0: they have no tool name to map.
 ## How sensitivity is derived (catalog-driven)
 
 Each `toolSchemas` entry names a **CDGC asset id** for a scanned schema (a flat
-file, table, etc.). On a cache miss the policy authenticates to IDMC
+file, table, etc.) or an **MCP Tool** asset from a custom MCP Server catalog source. On a cache miss the policy authenticates to IDMC
 (**Login → JWT**) and then, via the CDGC search API
 **`POST cdgc-api…/ccgf-searchv2/api/v1/search`** (Elasticsearch DSL,
 `X-INFA-SEARCH-LANGUAGE: elasticsearch`):
 
 1. **Resolve the schema asset** (`core.identity = toolSchemas[].schemaId`) → its `core.location`, name, external id.
-2. **Enumerate its columns** — `FlatField` assets under the schema location → field **names**.
+2. **Enumerate its columns** — assets of a `fieldClassTypes` class (`FlatField`, `worldtour.mcp.McpToolField` by default) under the schema location → field **names**.
 3. **Enumerate column → Business Term links** — `elementType=RELATIONSHIP`, `type=IClassTechnicalGlossaryBase`.
 4. **Resolve the linked terms** → `core.name`, `core.description` and the
    Security Level (`com.infa.ccgf.models.governance.securityClassification`).
@@ -152,6 +152,20 @@ pattern, so check them in the MCP Server's tool list.
 **UI visibility.** Links must have `core.curationStatus: ACCEPTED` to show in the
 CDGC Glossaries column. The policy reads them either way.
 
+**MCP Server catalog source (2.2.0+).** The same tools are also catalogued as
+MCP Tool assets in the custom catalog source **Worldtour Lausanne MCP Server**
+(`848893d6-6cc2-3657-a911-475a278af76c`), with their fields linked to the same WTL
+terms. Point `toolSchemas` at the MCP Tool ids instead of the flat files:
+
+| MCP tool | MCP Tool asset id | recordsPath |
+|---|---|---|
+| `sales-order-management-api_search_sales_orders` | `22ec6387-c0f2-4a1f-bf8e-9e69db90171f` | `orders` |
+| `sales-order-management-api_create_sales_order` | `113f2119-b11d-4aba-b9e1-5dcaba97b3de` | `orders` |
+| `inventory-fulfillment-api_check_inventory` | `1127fd2e-17ff-4028-ba5d-983e2592fd02` | `stock_items` |
+
+Verified live on 2026-10-09 against sd-mcp (instance 21226262) for the search tool:
+13 fields masked without clearance, none with `x-dp-clearance: restricted`.
+
 **Not covered.** Error results aren't records under `orders`, so they pass
 through unfiltered. The 402 `PAYMENT_DECLINED` response returns `card_number`
 and the 409 `CREDIT_LIMIT_EXCEEDED` response returns `iban`. Fix them in the
@@ -237,6 +251,7 @@ the two-tool run hasn't been verified against a live gateway yet.
 | `cdgcSearchUrl` | string (service) | required | CDGC search host (serves `ccgf-searchv2`). |
 | `cdgcOrgUsername` / `cdgcOrgPassword` | string (sensitive) | required | IDMC read-only service account. |
 | `toolSchemas` | array of `{tool, schemaId, recordsPath?}` | required | Maps each MCP tool to the CDGC schema (and records path) governing its results. Unmapped tools pass through. See "Mapping MCP tools to schemas". |
+| `fieldClassTypes` | array of string | `[com.infa.odin.models.file.flat.FlatField, worldtour.mcp.McpToolField]` | `core.classType` values of a schema's fields. Add the field class of any other custom model. |
 | `recordsPath` | string | `""` | Default `/`-path to the record(s) projected (`products`); array = each element. Overridden per tool by `toolSchemas[].recordsPath`. |
 | `sensitiveLevels` | array (multi-select) | `[confidential, restricted]` | Business Term Security Levels that make a linked column sensitive. |
 | `sensitiveMarker` | string | `confidential` | Fallback only, for terms with no Security Level: case-insensitive substring in the term description that marks the field sensitive. |
@@ -285,9 +300,13 @@ claims are attacker-controlled.
 cd field-level-entitlement-filter-definition && make release
 cd ../field-level-entitlement-filter-flex
 make build-asset-files && cargo build --target wasm32-wasip1 --release
-cargo test --lib            # 22 pure unit tests
+cargo test --lib            # 24 pure unit tests
 make release
 ```
+**2.2.0** adds `fieldClassTypes`, so a `schemaId` can be an MCP Tool asset of the
+custom MCP Server catalog source (its fields are `worldtour.mcp.McpToolField`).
+Before, only `FlatField` columns were read, so an MCP Tool id found no fields and
+the response passed through unfiltered. Existing configs keep working.
 **2.1.0** checks every Business Term linked to a column, not just the first. The
 column is sensitive if any of its terms is, so a level-less term added by the
 scanner's Glossary Association can no longer hide a Confidential term. Config is

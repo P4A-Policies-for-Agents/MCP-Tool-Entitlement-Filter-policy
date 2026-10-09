@@ -214,8 +214,21 @@ cargo build --target wasm32-wasip1 --release
 - [x] 50 field→term links written ACCEPTED (`../cdgc/link_mcp.py`). IClassTechnicalGlossaryBase
       works on custom classes, and the `path_hierarchy.parent` lookup finds the fields.
       `verify.py` (now accepts McpToolField) gives 13/13/5 sensitive fields, the same as the CSV schemas.
-- [ ] Then: policy change so it reads McpToolField as well as FlatField (`lib.rs`
-      `CT_FLATFIELD`). Point `toolSchemas` at the McpTool ids.
+- [x] 2.2.0 released 2026-10-09 into worldtour-lausanne (definition + implementation):
+      new `fieldClassTypes` config (default FlatField + `worldtour.mcp.McpToolField`,
+      `cdgc::field_class_types`, 2 tests, 24/24). Cause it fixed: on sd-mcp the search
+      tool was mapped to McpTool `22ec6387-…`, 2.1.0 found no FlatField children
+      ("no columns found"), and `failOpenOnCdgcError` passed the response through.
+  - sd-mcp instance **21226262** (Sandbox), policy 9483012, upgraded 2.1.0 → 2.2.0 with
+    `PATCH …/apis/21226262/policies/9483012 {"assetVersion":"2.2.0"}` (the CLI's
+    `policy edit` has no version flag; the PATCH kept the sensitive credentials).
+    Note: 21221660 is the REST sales-orders instance behind it, not the MCP one.
+  - Verified live: search tool, no clearance → `x-entitlement-filtered: 13`, `iban` etc.
+    masked; `x-dp-clearance: restricted` → 0 withheld.
+  - [ ] Only the search tool is mapped on 21226262. Add create_sales_order
+        (`113f2119-…`, `orders`) and check_inventory (`1127fd2e-…`, `stock_items`).
+  - [ ] sd-mcp has no Client ID Enforcement / JWT policy, and clearance is a caller
+        header, so any caller can send `x-dp-clearance: restricted`.
 
 
 ## Multi-term column fix (2026-10-09, unreleased, local only)
@@ -226,5 +239,4 @@ cargo build --target wasm32-wasip1 --release
   (`../cdgc/verify.py` unions all terms, so it did not show the problem.)
 - Fix: the column is sensitive if ANY linked term is (`entitlement::classify_terms`,
   2 new unit tests, 22/22 pass, wasm build + clippy clean).
-- [ ] Not released. Ship it with the McpToolField support, as a version bump from 2.0.0
-      in `Cargo.toml` + `exchange.json`.
+- [x] Released in 2.1.0.

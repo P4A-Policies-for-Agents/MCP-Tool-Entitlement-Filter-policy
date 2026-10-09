@@ -1,6 +1,6 @@
 // Copyright 2026 Salesforce, Inc. All rights reserved.
-//! Pure CDGC helpers (no PDK imports) — the JWT nonce and the cached
-//! field-sensitivity types. The HTTP fetch lives in lib.rs (needs the HttpClient).
+//! Pure CDGC helpers (no PDK imports) — the JWT nonce, the field class types and
+//! the cached field-sensitivity types. The HTTP fetch lives in lib.rs (needs the HttpClient).
 
 use std::time::SystemTime;
 
@@ -34,9 +34,41 @@ pub fn nonce_from_time(now: SystemTime) -> String {
         .unwrap_or_else(|_| "0".to_string())
 }
 
+/// Field class types used when `fieldClassTypes` is unset: flat-file columns and the
+/// fields of an MCP Tool from the `worldtour.mcp` custom metadata model.
+pub const DEFAULT_FIELD_CLASS_TYPES: &[&str] = &[
+    "com.infa.odin.models.file.flat.FlatField",
+    "worldtour.mcp.McpToolField",
+];
+
+/// The `core.classType` values a schema's fields may have. Blank entries are ignored;
+/// unset or all-blank falls back to `DEFAULT_FIELD_CLASS_TYPES`.
+pub fn field_class_types(values: Option<&[String]>) -> Vec<String> {
+    let v: Vec<String> = values.unwrap_or_default().iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if v.is_empty() {
+        DEFAULT_FIELD_CLASS_TYPES.iter().map(|s| s.to_string()).collect()
+    } else {
+        v
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn field_classes_default_to_flatfield_and_mcp_tool_field() {
+        let d = field_class_types(None);
+        assert_eq!(d, DEFAULT_FIELD_CLASS_TYPES);
+        assert_eq!(field_class_types(Some(&[" ".to_string()])), d);
+    }
+    #[test]
+    fn field_classes_configured_replace_default() {
+        let v = field_class_types(Some(&[" acme.Field ".to_string(), "".to_string()]));
+        assert_eq!(v, vec!["acme.Field".to_string()]);
+    }
     #[test]
     fn nonce_is_decimal() {
         let n = nonce_from_time(SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1));

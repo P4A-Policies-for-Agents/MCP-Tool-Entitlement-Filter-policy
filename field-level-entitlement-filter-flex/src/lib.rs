@@ -47,7 +47,7 @@ use pdk::logger;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
-use crate::cdgc::{nonce_from_time, CachedFieldMap, RefreshLock};
+use crate::cdgc::{field_class_types, nonce_from_time, CachedFieldMap, RefreshLock};
 use crate::entitlement::{apply, classify_terms, parse_csv_set, parse_level_set, plan, CallerContext, EntitlementPolicy, GovernedField, MaskMode};
 use crate::generated::config::Config;
 use crate::routing::{called_tool, resolve, Route, ToolMapping};
@@ -65,7 +65,6 @@ const DEFAULT_TIMEOUT_MS: i64 = 5_000;
 const CDGC_REFRESH_BUDGET_MS: i64 = 15_000;
 const DEFAULT_REFRESH_INTERVAL_SECONDS: i64 = 86_400;
 const SEARCH_PATH: &str = "/ccgf-searchv2/api/v1/search";
-const CT_FLATFIELD: &str = "com.infa.odin.models.file.flat.FlatField";
 const REL_TECH_GLOSSARY: &str = "com.infa.ccgf.models.governance.IClassTechnicalGlossaryBase";
 // The structured IDMC "Security Level" classification on a Business Term
 // (Public | Internal | Confidential | Restricted) — the primary sensitivity signal.
@@ -215,10 +214,12 @@ async fn fetch_field_map(
     let file_name = s(&file, "core.name");
     let external_id = s(&file, "core.externalId");
 
-    // 2. Enumerate columns (children of the schema location).
+    // 2. Enumerate columns (children of the schema location): flat-file columns or,
+    // for an MCP Tool asset, its MCP Tool Fields (fieldClassTypes).
+    let field_classes = field_class_types(config.field_class_types.as_deref());
     let cols = cdgc_search(client, config, clock, start, &jwt, &org, &json!({
         "from":0,"size":1000,"query":{"bool":{
-            "must":[{"terms":{"core.classType":[CT_FLATFIELD]}}],
+            "must":[{"terms":{"core.classType":field_classes}}],
             "filter":[{"terms":{"core.location::path_hierarchy.parent":[location]}}]}}
     })).await?;
     if cols.is_empty() {

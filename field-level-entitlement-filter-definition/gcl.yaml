@@ -64,6 +64,18 @@ spec:
         required:
           - tool
           - schemaId
+    fieldClassTypes:
+      type: array
+      items:
+        type: string
+      default:
+        - com.infa.odin.models.file.flat.FlatField
+        - worldtour.mcp.McpToolField
+      description: >-
+        CDGC class types (core.classType) of a schema's fields. The defaults cover
+        flat-file columns and the MCP Tool Fields of the worldtour.mcp custom model,
+        so a toolSchemas schemaId can be a flat file or an MCP Tool asset. Add the
+        field class of any other custom model here.
     recordsPath:
       type: string
       default: ""

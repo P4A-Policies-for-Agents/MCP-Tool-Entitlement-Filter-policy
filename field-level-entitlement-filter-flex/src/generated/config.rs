@@ -36,6 +36,8 @@ pub struct Config {
     pub distributed: Option<bool>,
     #[serde(alias = "failOpenOnCdgcError")]
     pub fail_open_on_cdgc_error: Option<bool>,
+    #[serde(alias = "fieldClassTypes")]
+    pub field_class_types: Option<Vec<String>>,
     #[serde(alias = "maskMode")]
     pub mask_mode: Option<String>,
     #[serde(alias = "maskToken")]
