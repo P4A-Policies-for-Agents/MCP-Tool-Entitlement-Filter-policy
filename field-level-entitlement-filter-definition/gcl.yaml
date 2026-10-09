@@ -6,10 +6,9 @@ metadata:
     title: MCP Tool Response Field Entitlement Filter
     category: Security
     description: >-
-      Maps each MCP tool to a CDGC schema, derives per-field sensitivity from
-      Informatica CDGC, and projects each tool-response field for the caller —
-      masking, nulling, or dropping sensitive fields the caller's clearance and
-      declared purpose don't entitle them to.
+      Maps each MCP tool to a CDGC schema and masks, nulls, or drops the
+      tool-response fields that CDGC marks sensitive unless the caller's clearance
+      and declared purpose entitle them.
     metadata/capabilities/injectionPoint: inbound
     metadata/capabilities/assetTypes: mcp
     metadata/interfaceScope: api
