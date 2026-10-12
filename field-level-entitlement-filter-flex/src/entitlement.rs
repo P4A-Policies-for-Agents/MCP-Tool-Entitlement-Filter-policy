@@ -297,8 +297,8 @@ mod tests {
     #[test]
     fn classify_any_sensitive_term_wins() {
         let lv = parse_csv_set("confidential,restricted");
-        let terms = [("Unit Cost", "", "landed cost"), ("WTL Stock Unit Cost", "Confidential", "")];
-        assert_eq!(classify_terms(terms, &lv, "confidential"), (true, Some("WTL Stock Unit Cost".into())));
+        let terms = [("Unit Cost", "", "landed cost"), ("Stock Unit Cost", "Confidential", "")];
+        assert_eq!(classify_terms(terms, &lv, "confidential"), (true, Some("Stock Unit Cost".into())));
     }
 
     #[test]

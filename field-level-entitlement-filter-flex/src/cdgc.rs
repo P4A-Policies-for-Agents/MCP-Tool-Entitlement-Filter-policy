@@ -35,10 +35,10 @@ pub fn nonce_from_time(now: SystemTime) -> String {
 }
 
 /// Field class types used when `fieldClassTypes` is unset: flat-file columns and the
-/// fields of an MCP Tool from the `worldtour.mcp` custom metadata model.
+/// fields of an MCP Tool from the `protocol.mcp` custom metadata model.
 pub const DEFAULT_FIELD_CLASS_TYPES: &[&str] = &[
     "com.infa.odin.models.file.flat.FlatField",
-    "worldtour.mcp.McpToolField",
+    "protocol.mcp.McpToolField",
 ];
 
 /// The `core.classType` values a schema's fields may have. Blank entries are ignored;

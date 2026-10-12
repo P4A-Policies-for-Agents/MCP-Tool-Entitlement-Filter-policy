@@ -4,8 +4,9 @@
 1.3.0 with per-MCP-tool schema mapping (`toolSchemas`). Since 2.0.0, `toolSchemas` is the
 only schema source (no `schemaId` / header / claim) and the policy is MCP-only.
 
-Read `PROGRESS.md` first: it has the origin of this copy, design decisions, what
-changed, and open tasks. Keep it updated as work progresses.
+This repo is public and published on p4a.ai: keep it free of tenant-specific
+names, ids and hosts. Record releases in `CHANGELOG.md` and keep `P4A.md` (the
+submission kit and catalog doc tabs) in step with `gcl.yaml` and the README.
 
 - After editing `field-level-entitlement-filter-definition/gcl.yaml`, regenerate the
   config struct locally with
