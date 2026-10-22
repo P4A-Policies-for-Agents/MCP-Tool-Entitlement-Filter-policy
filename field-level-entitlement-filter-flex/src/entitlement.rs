@@ -162,26 +162,79 @@ pub fn plan(fields: &[GovernedField], caller: &CallerContext, policy: &Entitleme
     Projection { withhold, mode: policy.mask_mode, token: policy.mask_token.clone(), entitled }
 }
 
+fn withhold(record: &mut Map<String, Value>, key: &str, projection: &Projection) {
+    match projection.mode {
+        MaskMode::Mask => {
+            record.insert(key.to_string(), Value::String(projection.token.clone()));
+        }
+        MaskMode::Nullify => {
+            record.insert(key.to_string(), Value::Null);
+        }
+        MaskMode::Drop => {
+            record.remove(key);
+        }
+    }
+}
+
+/// Split a nested field name — "header.customerName", "items[].netValue", or the
+/// JSONPath form "$.items[*].netValue" — into (key, is-array) segments. `None` for a
+/// plain name, which is only ever matched as a top-level key.
+fn path_segments(name: &str) -> Option<Vec<(&str, bool)>> {
+    let path = name.strip_prefix("$.").unwrap_or(name);
+    if !path.contains('.') && !path.contains('[') {
+        return None;
+    }
+    path.split('.')
+        .map(|seg| match seg.strip_suffix("[]").or_else(|| seg.strip_suffix("[*]")) {
+            Some(key) => (key, true),
+            None => (seg, false),
+        })
+        .map(|(key, arr)| if key.is_empty() { None } else { Some((key, arr)) })
+        .collect()
+}
+
+/// Withhold the field at `segs` under `record`, fanning out over arrays. A trailing
+/// array segment ("tags[]") withholds the whole array. True if any value was withheld.
+fn apply_path(record: &mut Map<String, Value>, segs: &[(&str, bool)], projection: &Projection) -> bool {
+    let Some(((key, is_array), rest)) = segs.split_first() else { return false };
+    if rest.is_empty() {
+        if !record.contains_key(*key) {
+            return false;
+        }
+        withhold(record, key, projection);
+        return true;
+    }
+    match record.get_mut(*key) {
+        Some(Value::Array(items)) if *is_array => {
+            let mut any = false;
+            for item in items.iter_mut() {
+                if let Some(o) = item.as_object_mut() {
+                    any |= apply_path(o, rest, projection);
+                }
+            }
+            any
+        }
+        Some(Value::Object(o)) if !*is_array => apply_path(o, rest, projection),
+        _ => false,
+    }
+}
+
 /// Apply the projection to one record in place. Returns the sorted names of the
-/// fields actually withheld (only fields present in the record are acted on).
+/// fields actually withheld (only fields present in the record are acted on). A name
+/// that is a top-level key is withheld as is; otherwise a nested name (MCP Tool Output
+/// Fields such as "items[].netValue") is followed into the record.
 pub fn apply(record: &mut Map<String, Value>, projection: &Projection) -> Vec<String> {
     let mut applied = Vec::new();
     for name in &projection.withhold {
-        if !record.contains_key(name) {
-            continue;
+        let hit = if record.contains_key(name) {
+            withhold(record, name, projection);
+            true
+        } else {
+            path_segments(name).is_some_and(|segs| apply_path(record, &segs, projection))
+        };
+        if hit {
+            applied.push(name.clone());
         }
-        match projection.mode {
-            MaskMode::Mask => {
-                record.insert(name.clone(), Value::String(projection.token.clone()));
-            }
-            MaskMode::Nullify => {
-                record.insert(name.clone(), Value::Null);
-            }
-            MaskMode::Drop => {
-                record.remove(name);
-            }
-        }
-        applied.push(name.clone());
     }
     applied
 }
@@ -284,6 +337,55 @@ mod tests {
         let mut r = rec(json!({"sku":"SKU-1"})); // unit_cost not present
         let applied = apply(&mut r, &proj);
         assert!(applied.is_empty());
+    }
+
+    fn nested_proj(mode: MaskMode, names: &[&str]) -> Projection {
+        Projection {
+            withhold: names.iter().map(|s| s.to_string()).collect(),
+            mode,
+            token: "***".into(),
+            entitled: false,
+        }
+    }
+
+    #[test]
+    fn apply_nested_output_fields() {
+        let proj = nested_proj(MaskMode::Mask, &["header.customerName", "items[].netValue", "credit.missing"]);
+        let mut r = rec(json!({
+            "header": {"salesOrderId": "SO-1", "customerName": "ACME"},
+            "items": [{"material": "M-1", "netValue": 10}, {"material": "M-2", "netValue": 20}, "x"],
+        }));
+        let applied = apply(&mut r, &proj);
+        assert_eq!(applied, vec!["header.customerName".to_string(), "items[].netValue".to_string()]);
+        assert_eq!(r["header"], json!({"salesOrderId": "SO-1", "customerName": "***"}));
+        assert_eq!(r["items"], json!([{"material": "M-1", "netValue": "***"}, {"material": "M-2", "netValue": "***"}, "x"]));
+    }
+
+    #[test]
+    fn apply_nested_drop_and_jsonpath_form() {
+        let proj = nested_proj(MaskMode::Drop, &["$.items[*].netValue", "tags[]"]);
+        let mut r = rec(json!({"items": [{"netValue": 1, "uom": "EA"}], "tags": ["a"]}));
+        apply(&mut r, &proj);
+        assert_eq!(r, rec(json!({"items": [{"uom": "EA"}]})));
+    }
+
+    #[test]
+    fn apply_literal_key_wins_and_shape_mismatch_is_ignored() {
+        let proj = nested_proj(MaskMode::Mask, &["a.b", "items[].x", "obj.y"]);
+        // "a.b" is a literal key (e.g. a flat-file column); "items" is not an array and
+        // "obj" is an array, so the paths don't match.
+        let mut r = rec(json!({"a.b": 1, "a": {"b": 2}, "items": {"x": 3}, "obj": [{"y": 4}]}));
+        let applied = apply(&mut r, &proj);
+        assert_eq!(applied, vec!["a.b".to_string()]);
+        assert_eq!(r, rec(json!({"a.b": "***", "a": {"b": 2}, "items": {"x": 3}, "obj": [{"y": 4}]})));
+    }
+
+    #[test]
+    fn path_segments_parse() {
+        assert_eq!(path_segments("sku"), None);
+        assert_eq!(path_segments("items[].netValue"), Some(vec![("items", true), ("netValue", false)]));
+        assert_eq!(path_segments("$.header.customerName"), Some(vec![("header", false), ("customerName", false)]));
+        assert_eq!(path_segments("a..b"), None);
     }
 
     #[test]

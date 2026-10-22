@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.4.0
+
+- Adds `mcpClassMapping`, which maps the MCP protocol field classes
+  (`McpToolField`, `McpToolOutputField`, `McpToolInputField`) to the CDGC class
+  types of your MCP model. Field and Output classes are the response fields that
+  get filtered; Input classes (tool arguments) are never read as response fields.
+  The default maps the A2D agentic model (`a2d.agentic.McpToolOutputField` /
+  `a2d.agentic.McpToolInputField`).
+- Nested field names such as `header.customerName` or `items[].netValue` (and the
+  JSONPath form `$.items[*].netValue`) are followed into each record. A literal
+  top-level key of the same name still wins, so flat columns behave as before.
+- `fieldClassTypes` is unchanged and its classes count as `McpToolField`, so 2.3
+  configs keep working.
+
 ## 2.3.0
 
 - The default `fieldClassTypes` MCP field class is now the generic

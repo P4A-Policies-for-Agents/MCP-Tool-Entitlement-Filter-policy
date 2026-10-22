@@ -75,7 +75,39 @@ spec:
         CDGC class types (core.classType) of a schema's fields. The defaults cover
         flat-file columns and the MCP Tool Fields of the protocol.mcp custom model,
         so a toolSchemas schemaId can be a flat file or an MCP Tool asset. Add the
-        field class of any other custom model here.
+        field class of any other custom model here. Each class is treated as an
+        MCP Tool Field (a field of the tool's response records); use
+        mcpClassMapping to map a model that splits input and output fields.
+    mcpClassMapping:
+      type: array
+      description: >-
+        Maps MCP protocol field classes to the CDGC class types (core.classType) of
+        your MCP model. MCP Tool Field (single field class, names relative to the
+        records path) and MCP Tool Output Field (a property of the tool's output,
+        nested names such as "header.customerName" or "items[].netValue") are the
+        response fields that get filtered. MCP Tool Input Field classes are the
+        tool's arguments: never treated as response fields. Combined with
+        fieldClassTypes. The default maps the A2D agentic model.
+      items:
+        type: object
+        properties:
+          mcpClass:
+            type: string
+            enum: [McpToolField, McpToolOutputField, McpToolInputField]
+            description: MCP protocol field class.
+          idmcClass:
+            type: string
+            description: >-
+              CDGC class type of that field class in your model, e.g.
+              a2d.agentic.McpToolOutputField.
+        required:
+          - mcpClass
+          - idmcClass
+      default:
+        - mcpClass: McpToolOutputField
+          idmcClass: a2d.agentic.McpToolOutputField
+        - mcpClass: McpToolInputField
+          idmcClass: a2d.agentic.McpToolInputField
     recordsPath:
       type: string
       default: ""

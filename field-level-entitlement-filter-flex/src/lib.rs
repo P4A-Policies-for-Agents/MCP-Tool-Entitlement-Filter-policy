@@ -47,7 +47,7 @@ use pdk::logger;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
-use crate::cdgc::{field_class_types, nonce_from_time, CachedFieldMap, RefreshLock};
+use crate::cdgc::{nonce_from_time, response_field_classes, CachedFieldMap, RefreshLock};
 use crate::entitlement::{apply, classify_terms, parse_csv_set, parse_level_set, plan, CallerContext, EntitlementPolicy, GovernedField, MaskMode};
 use crate::generated::config::Config;
 use crate::routing::{called_tool, resolve, Route, ToolMapping};
@@ -215,8 +215,11 @@ async fn fetch_field_map(
     let external_id = s(&file, "core.externalId");
 
     // 2. Enumerate columns (children of the schema location): flat-file columns or,
-    // for an MCP Tool asset, its MCP Tool Fields (fieldClassTypes).
-    let field_classes = field_class_types(config.field_class_types.as_deref());
+    // for an MCP Tool asset, its response fields (fieldClassTypes + the MCP Tool Field
+    // / Output Field classes of mcpClassMapping; Input Fields are tool arguments).
+    let mapping: Option<Vec<(String, String)>> = config.mcp_class_mapping.as_ref()
+        .map(|m| m.iter().map(|e| (e.mcp_class.clone(), e.idmc_class.clone())).collect());
+    let field_classes = response_field_classes(config.field_class_types.as_deref(), mapping.as_deref());
     let cols = cdgc_search(client, config, clock, start, &jwt, &org, &json!({
         "from":0,"size":1000,"query":{"bool":{
             "must":[{"terms":{"core.classType":field_classes}}],

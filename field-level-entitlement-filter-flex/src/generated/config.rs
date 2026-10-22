@@ -1,5 +1,12 @@
 use serde::Deserialize;
 #[derive(Deserialize, Clone, Debug)]
+pub struct McpClassMapping0Config {
+    #[serde(alias = "idmcClass")]
+    pub idmc_class: String,
+    #[serde(alias = "mcpClass")]
+    pub mcp_class: String,
+}
+#[derive(Deserialize, Clone, Debug)]
 pub struct ToolSchemas0Config {
     #[serde(alias = "recordsPath")]
     pub records_path: Option<String>,
@@ -42,6 +49,8 @@ pub struct Config {
     pub mask_mode: Option<String>,
     #[serde(alias = "maskToken")]
     pub mask_token: Option<String>,
+    #[serde(alias = "mcpClassMapping")]
+    pub mcp_class_mapping: Option<Vec<McpClassMapping0Config>>,
     #[serde(alias = "purposeClaim")]
     pub purpose_claim: Option<String>,
     #[serde(alias = "purposeHeader")]

@@ -123,7 +123,8 @@ without the configuration table.
 | `cdgcSearchUrl` | string (service) | required | CDGC search host (serves `ccgf-searchv2`). |
 | `cdgcOrgUsername` / `cdgcOrgPassword` | string (sensitive) | required | IDMC read-only service account. |
 | `toolSchemas` | array | required | Maps each MCP tool to the CDGC asset governing its results. |
-| `fieldClassTypes` | array of string | `[com.infa.odin.models.file.flat.FlatField, protocol.mcp.McpToolField]` | `core.classType` values of an asset's fields. Add your custom model's field class. |
+| `fieldClassTypes` | array of string | `[com.infa.odin.models.file.flat.FlatField, protocol.mcp.McpToolField]` | `core.classType` values of an asset's fields, read as MCP Tool Fields. Add your custom model's field class. |
+| `mcpClassMapping` | array | A2D agentic Output / Input Field | Maps the MCP classes `McpToolField`, `McpToolOutputField`, `McpToolInputField` to your model's class types. Input fields are never filtered. |
 | `recordsPath` | string | `""` | Default `/`-path to the record(s) projected; arrays project each element. |
 | `sensitiveLevels` | array | `[confidential, restricted]` | Business Term Security Levels that make a field sensitive. |
 | `sensitiveMarker` | string | `confidential` | Fallback for terms with no Security Level: substring in the term description. |
@@ -180,6 +181,13 @@ without the configuration table.
     { "fieldClassTypes": ["com.infa.odin.models.file.flat.FlatField", "acme.mcp.McpToolField"],
       "toolSchemas": [{ "tool": "search_orders", "schemaId": "<MCP Tool asset id>", "recordsPath": "orders" }] }
 
+### Map a model that splits MCP Tool Input and Output Fields
+
+    { "mcpClassMapping": [
+        { "mcpClass": "McpToolOutputField", "idmcClass": "acme.mcp.ToolOutputField" },
+        { "mcpClass": "McpToolInputField",  "idmcClass": "acme.mcp.ToolInputField" }],
+      "toolSchemas": [{ "tool": "get_sales_order", "schemaId": "<MCP Tool asset id>" }] }
+
 A two-persona walkthrough (analyst vs fraud investigator) is in
 [demo/WALKTHROUGH.md](https://github.com/P4A-Policies-for-Agents/MCP-Tool-Entitlement-Filter-policy/blob/main/demo/WALKTHROUGH.md).
 ```
@@ -217,8 +225,11 @@ every tool that returns governed data.
 the mapping key is the MCP tool name.
 
 **My tools are catalogued with a custom model. Will it find their fields?** Yes, if
-the field class is in `fieldClassTypes`. The default covers
-`protocol.mcp.McpToolField`; add your own package's class otherwise.
+its field classes are mapped. The defaults cover `protocol.mcp.McpToolField` and
+the A2D agentic `McpToolOutputField`; otherwise add your class to `fieldClassTypes`
+or map it in `mcpClassMapping` (`McpToolField`, `McpToolOutputField` or
+`McpToolInputField`). Input fields are never treated as response fields, and nested
+output names like `items[].netValue` are followed into the result.
 
 **Does it handle streaming responses?** JSON and single-message SSE results only.
 

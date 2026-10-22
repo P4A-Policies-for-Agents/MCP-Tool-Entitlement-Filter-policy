@@ -27,7 +27,7 @@ file, table, etc.) or an **MCP Tool** asset from a custom MCP Server catalog sou
 `X-INFA-SEARCH-LANGUAGE: elasticsearch`):
 
 1. **Resolve the schema asset** (`core.identity = toolSchemas[].schemaId`) → its `core.location`, name, external id.
-2. **Enumerate its columns** — assets of a `fieldClassTypes` class (`FlatField` and `protocol.mcp.McpToolField` by default) under the schema location → field **names**.
+2. **Enumerate its columns** — assets of a response-field class (`fieldClassTypes` plus the MCP Tool Field / Output Field classes of `mcpClassMapping`; by default `FlatField`, `protocol.mcp.McpToolField` and `a2d.agentic.McpToolOutputField`) under the schema location → field **names**. MCP Tool Input Field classes are skipped.
 3. **Enumerate column → Business Term links** — `elementType=RELATIONSHIP`, `type=IClassTechnicalGlossaryBase`.
 4. **Resolve the linked terms** → `core.name`, `core.description` and the
    Security Level (`com.infa.ccgf.models.governance.securityClassification`).
@@ -88,10 +88,24 @@ file's columns. The expected shape is:
 | MCP Tool Field | `core.DataElement` | one per response field, linked to Business Terms |
 
 Tools and fields are joined by `core.ParentChild`, so a field's `core.location`
-sits under its tool's, exactly like flat-file columns. The default field classes
-are `com.infa.odin.models.file.flat.FlatField` and `protocol.mcp.McpToolField`.
-If your custom model uses a different package, list its field class in
-`fieldClassTypes`:
+sits under its tool's, exactly like flat-file columns.
+
+Models come in two shapes, and `mcpClassMapping` maps the MCP protocol field
+classes onto the CDGC class types of yours:
+
+| MCP class (`mcpClass`) | Meaning | Field names | Filtered? |
+|---|---|---|---|
+| `McpToolField` | single field class per tool (e.g. `protocol.mcp`) | relative to the records path, e.g. `card_number` | yes |
+| `McpToolOutputField` | a property of the tool's output schema (e.g. `a2d.agentic`) | nested from the payload root, e.g. `header.customerName`, `items[].netValue` | yes |
+| `McpToolInputField` | a tool argument (input schema) | e.g. `salesOrderId` | no, never a response field |
+
+`fieldClassTypes` is still read and its classes count as `McpToolField`, so 2.3
+configs keep working. Its default is `FlatField` and `protocol.mcp.McpToolField`;
+the `mcpClassMapping` default maps the A2D agentic model
+(`a2d.agentic.McpToolOutputField` / `a2d.agentic.McpToolInputField`). A class
+mapped as `McpToolInputField` is excluded even if it is also in `fieldClassTypes`.
+
+A model with one field class per tool, in its own package:
 
 ```json
 "fieldClassTypes": ["com.infa.odin.models.file.flat.FlatField", "acme.mcp.McpToolField"],
@@ -99,6 +113,25 @@ If your custom model uses a different package, list its field class in
   { "tool": "search_orders", "schemaId": "<MCP Tool asset id>", "recordsPath": "orders" }
 ]
 ```
+
+The same, plus a model that splits input and output fields:
+
+```json
+"mcpClassMapping": [
+  { "mcpClass": "McpToolField",       "idmcClass": "acme.mcp.McpToolField" },
+  { "mcpClass": "McpToolOutputField", "idmcClass": "a2d.agentic.McpToolOutputField" },
+  { "mcpClass": "McpToolInputField",  "idmcClass": "a2d.agentic.McpToolInputField" }
+],
+"toolSchemas": [
+  { "tool": "search_orders",   "schemaId": "<acme MCP Tool asset id>", "recordsPath": "orders" },
+  { "tool": "get_sales_order", "schemaId": "<a2d MCP Tool asset id>" }
+]
+```
+
+Output Fields are named from the payload root, so leave `recordsPath` empty for
+those tools. A name is followed into the record (`a.b` = key `b` of object `a`,
+`a[]` = each element of array `a`, `$.a[*].b` also accepted) unless the record has
+that literal top-level key, which wins.
 
 Link the tool fields to Business Terms with `core.curationStatus: ACCEPTED` if they
 should also show in the CDGC Glossaries column. The policy reads links either way.
@@ -183,7 +216,8 @@ the two-tool run hasn't been verified against a live gateway yet.
 | `cdgcSearchUrl` | string (service) | required | CDGC search host (serves `ccgf-searchv2`). |
 | `cdgcOrgUsername` / `cdgcOrgPassword` | string (sensitive) | required | IDMC read-only service account. |
 | `toolSchemas` | array of `{tool, schemaId, recordsPath?}` | required | Maps each MCP tool to the CDGC schema (and records path) governing its results. Unmapped tools pass through. See "Mapping MCP tools to schemas". |
-| `fieldClassTypes` | array of string | `[com.infa.odin.models.file.flat.FlatField, protocol.mcp.McpToolField]` | `core.classType` values of a schema's fields. Add the field class of any other custom model (see "Cataloguing MCP tools as CDGC assets"). |
+| `fieldClassTypes` | array of string | `[com.infa.odin.models.file.flat.FlatField, protocol.mcp.McpToolField]` | `core.classType` values of a schema's fields, read as MCP Tool Fields. Add the field class of any other custom model (see "Cataloguing MCP tools as CDGC assets"). |
+| `mcpClassMapping` | array of `{mcpClass, idmcClass}` | A2D agentic Output / Input Field | Maps `McpToolField` / `McpToolOutputField` / `McpToolInputField` to your model's class types. Field and Output classes are filtered, Input classes never. Combined with `fieldClassTypes`. |
 | `recordsPath` | string | `""` | Default `/`-path to the record(s) projected (`products`); array = each element. Overridden per tool by `toolSchemas[].recordsPath`. |
 | `sensitiveLevels` | array (multi-select) | `[confidential, restricted]` | Business Term Security Levels that make a linked column sensitive. |
 | `sensitiveMarker` | string | `confidential` | Fallback only, for terms with no Security Level: case-insensitive substring in the term description that marks the field sensitive. |
@@ -232,7 +266,7 @@ claims are attacker-controlled.
 cd field-level-entitlement-filter-definition && make release
 cd ../field-level-entitlement-filter-flex
 make build-asset-files && cargo build --target wasm32-wasip1 --release
-cargo test --lib            # 24 pure unit tests
+cargo test --lib            # 31 pure unit tests
 make release
 ```
 Requires **PDK 1.10** and `cargo-anypoint` 1.9. Release history is in
